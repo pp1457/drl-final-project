@@ -171,6 +171,22 @@ In default-difficulty Quick Game mode, the NO_PRESS-forever policy already score
 - **Evening:** distributed deploy across ws1–ws8 + ws10. First 9-run matrix launched at 19:38. Cron-based monitoring set up at 19:57. Multiple watchdog kills required N=3 fallback and ws-specific relaunches.
 - **Late evening:** analyzed first training results — discovered OCA-too-easy and full_rgb pickle tax. Fixed both. Restarted matrix at 21:06 with 4 fixes applied.
 
+### Day 1 — checks #6, ~upd 30/130 (22:45)
+
+**Returns are DECREASING in every run.** Across all 3 configs:
+```
+baseline:  1.22 → 0.92, 1.11 → 0.83, 0.33 (stable)
+oca:       0.89 → 0.67, 0.56 → 0.42, 0.67 → 0.56
+dpr:       0.44 → 0.33, 0.33 → 0.33, 0.33 → 0.25
+```
+Mean by config: baseline 0.69 > oca 0.55 > dpr 0.30.
+
+Combined with dropping entropy in several seeds (ws5 oca at 0.475, ws4 oca at 0.529, ws10 dpr at 0.608) this suggests **premature policy commitment to a worse-than-do-nothing policy.** Recall our controlled experiment: NO_PRESS-only scored 3 in 45s; sustained-PRESS scored 1. If PPO is committing toward "press more often" without enough exploration, it should underperform "press never" — exactly what we're seeing.
+
+The entropy bonus coefficient (`ent_coef=0.01`) may be too low. A bigger coefficient would keep the policy exploring longer before committing.
+
+**Decision:** wait through check #8 (~upd 60/130) before restarting. PPO sometimes recovers as the value function catches up to penalize bad commitments. If still trending down at upd 60, restart with `--ent-coef 0.05`.
+
 ### Day 1 mid-training observations (after re-dispatch ~21:35)
 
 Once the four fixes landed (drop `full_rgb`, OCA K=8, max_episode_steps=1024, N=3 default), the training was healthier and produced these mid-training findings:
