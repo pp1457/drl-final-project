@@ -249,9 +249,9 @@ class Agent(nn.Module):
         self.aux_mode = aux_mode
         if aux_mode == "oca":
             self.aux_head: nn.Module = nn.Sequential(
-                _layer_init(nn.Linear(512, 128)),
+                _layer_init(nn.Linear(512, MODEL.oca_hidden_dim)),
                 nn.ReLU(),
-                _layer_init(nn.Linear(128, OCA_DIM), std=0.01),
+                _layer_init(nn.Linear(MODEL.oca_hidden_dim, OCA_DIM), std=0.01),
             )
         elif aux_mode == "dpr":
             self.aux_head = DPRDecoder()

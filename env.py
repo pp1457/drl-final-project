@@ -81,8 +81,8 @@ RELEASE = NO_PRESS
 # Observation resolution after resize.
 OBS_H, OBS_W = 84, 84
 
-# OCA target dimensionality: [xb, yb, xp, yp, sinp, cosp, xo, yo, sino, coso]
-OCA_DIM = 10
+# OCA target dimensionality (18): [ball_xy] + 4 players × [x, y, sin θ, cos θ]
+OCA_DIM = 18
 
 
 @dataclasses.dataclass
@@ -300,23 +300,39 @@ class BouncyBasketballEnv(gym.Env):
 def _pack_oca_from_pose(
     pose: dict, frame_w: int, frame_h: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Mirror of vision.pack_oca_target, kept here to break the import cycle
-    when this module is loaded in worker subprocesses before vision.py is
-    importable. Layout must match vision.pack_oca_target."""
+    """Mirror of vision.pack_oca_target — kept here to break the import cycle
+    when env is loaded by worker subprocesses before vision is importable.
+    Layout must match vision.pack_oca_target (18-dim per-player schema)."""
     target = np.zeros(OCA_DIM, dtype=np.float32)
-    mask = np.zeros(OCA_DIM, dtype=np.float32)
+    mask   = np.zeros(OCA_DIM, dtype=np.float32)
     if pose.get("ball") is not None:
         bx, by = pose["ball"]
         target[0:2] = (bx / frame_w, by / frame_h)
         mask[0:2] = 1.0
-    if pose.get("player") is not None:
-        px, py, sp, cp = pose["player"]
-        target[2:6] = (px / frame_w, py / frame_h, sp, cp)
-        mask[2:6] = 1.0
-    if pose.get("opp") is not None:
-        ox, oy, so, co = pose["opp"]
-        target[6:10] = (ox / frame_w, oy / frame_h, so, co)
-        mask[6:10] = 1.0
+    for i, p in enumerate((pose.get("chi") or [])[:2]):
+        base = 2 + i * 4
+        x, y, sin_t, cos_t = p
+        target[base + 0] = x / frame_w
+        target[base + 1] = y / frame_h
+        mask[base + 0] = 1.0
+        mask[base + 1] = 1.0
+        if sin_t is not None and cos_t is not None:
+            target[base + 2] = sin_t
+            target[base + 3] = cos_t
+            mask[base + 2] = 1.0
+            mask[base + 3] = 1.0
+    for i, p in enumerate((pose.get("hou") or [])[:2]):
+        base = 10 + i * 4
+        x, y, sin_t, cos_t = p
+        target[base + 0] = x / frame_w
+        target[base + 1] = y / frame_h
+        mask[base + 0] = 1.0
+        mask[base + 1] = 1.0
+        if sin_t is not None and cos_t is not None:
+            target[base + 2] = sin_t
+            target[base + 3] = cos_t
+            mask[base + 2] = 1.0
+            mask[base + 3] = 1.0
     return target, mask
 
 

@@ -49,6 +49,11 @@ class VisionConfig:
     chi_red_hsv_hi:   tuple[int, int, int] = (8,   255, 255)
     hou_white_hsv_lo: tuple[int, int, int] = (0,   0,   200)
     hou_white_hsv_hi: tuple[int, int, int] = (180, 40,  255)
+    # Shoes: dark + low-saturation pixels in the feet band. Used to derive
+    # per-player body axis (vector from feet to torso). Sampled values in the
+    # feet band of a Q4 frame: RGB=(42,42,42) HSV=(0,0,42) is typical shoe.
+    shoe_hsv_lo:      tuple[int, int, int] = (0,   0,   0)
+    shoe_hsv_hi:      tuple[int, int, int] = (180, 100, 80)
 
     # Spatial filter (native landscape coords on 2340x1080 frame).
     # Two-stage filter, applied to each blob centroid:
@@ -86,6 +91,16 @@ class VisionConfig:
     player_blob_max: int = 8000
     ball_blob_min:   int = 50
     ball_blob_max:   int = 1200
+    # Shoe-pair blob (two shoes merged): smaller than jersey blob.
+    shoe_blob_min:   int = 80
+    shoe_blob_max:   int = 2000
+    # Feet band y range — shoes only valid in this strip.
+    shoe_y_lo:       int = 660
+    shoe_y_hi:       int = 760
+    # Max vertical distance from jersey centroid to its paired shoe centroid.
+    # Players' torso is ~120-180 px above their feet; allow some slack for
+    # mid-air players.
+    jersey_to_shoe_max_dy: int = 250
 
 
 VISION = VisionConfig()
@@ -199,9 +214,14 @@ class ModelConfig:
     # 84x84). NatureCNN: 84 -> 20 -> 9 -> 7. The 64*7*7 below comes from this.
     cnn_flat_dim:     int   = 64 * 7 * 7
 
-    # OCA head: MLP regressing 10-dim pose target
-    oca_hidden_dim:   int   = 128
-    oca_output_dim:   int   = 10
+    # OCA head: MLP regressing 18-dim pose target
+    # Layout: [ball_xy] + [chi1_xy_sin_cos] + [chi2_xy_sin_cos] +
+    #         [hou1_xy_sin_cos] + [hou2_xy_sin_cos]
+    # = 2 + 4 + 4 + 4 + 4 = 18 dims.
+    # rotation is body axis (feet → torso), encoded sin/cos to avoid θ
+    # wrap-around discontinuity.
+    oca_hidden_dim:   int   = 256       # bumped to handle the larger output
+    oca_output_dim:   int   = 18
     # How many agent steps into the future OCA predicts the pose. With
     # frame_skip=4 and ~33ms/game frame, K=N -> predict ~132N ms ahead.
     # Empirical findings:
