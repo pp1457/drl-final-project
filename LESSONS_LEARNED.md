@@ -189,7 +189,38 @@ Root cause is unclear but likely a combination of:
 
 **Plan: fix the worker reset() to verify gameplay actually starts before returning, instead of relying on hardcoded sleeps. Stay on the real Android APK as the proposal specifies. The clone_env stays as the §5.3 robustness eval target only.**
 
-Confirmed via clone-env smoke test that the network and PPO loop are sound (sps 60, fh 0.75/4.5, aux 0.246 → 0.004 in 8 updates). So the bug is specifically in how env.reset() interacts with the Android worker subprocesses — not in the model or training loop itself. That's good news; means we can target the fix narrowly.
+Confirmed via clone-env smoke test that the network and PPO loop are sound (sps 60, fh 0.75/4.5, aux 0.246 → 0.004 in 8 updates).
+
+**Then found the real bug:** `vision.detect_pose` was calling `cv2.cvtColor(frame, COLOR_BGR2HSV)` on a frame that the worker passes in as RGB (from `backend.grab_frame()`). The HSV values were completely wrong (red gets interpreted as blue, etc.) → no detections → fh ~0.03. My standalone tests using `cv2.imread` (which returns BGR) "worked" because the channel order matched what `COLOR_BGR2HSV` expected.
+
+Fix:
+- `vision.detect_pose`: COLOR_BGR2HSV → COLOR_RGB2HSV; parameter renamed `frame_rgb`
+- `reward.is_game_over`: drop the redundant RGB→BGR→HSV roundtrip
+
+### Day 2 — 01:55, second finding: teams render identically
+
+Sampled pixels from a Q4 mid-play frame, looking for HOU's white jersey:
+- Hue histogram across 111803 saturated pixels in the player y-band:
+  - 95% at H=10-20 (red/orange)
+  - 8% at H=90-100 (cyan — the DREAMON STUDIOS background sign)
+  - ~0% at any other hue
+- No white saturation cluster anywhere
+
+**Both CHI and HOU wear red jerseys in actual gameplay.** The team-select preview where HOU appeared white was misleading. We cannot distinguish CHI from HOU via color.
+
+Effective OCA target shrinks from 10 dims to 6:
+```
+[xb, yb,                                                    ← ball position (2)
+ xc, yc, sin(θ_c), cos(θ_c),                                ← collective-team centroid (4)
+ 0, 0, 0, 0]                                                ← HOU dims always masked-out
+```
+
+For the paper: this becomes a §3 design note + §7 limitation. The OCA hypothesis (sparse object-pose supervision beats dense pixel reconstruction) is still testable — we just collapse the two team centroids into one collective centroid. The principle is unchanged.
+
+Alternative we did NOT pursue (could be future work):
+- Subtle per-player visual differences (skin tone, hair color, white shoulder vs no shoulder) might still separate teams via a hand-tuned color sample. ~1 hour of additional tuning. Not done because deadline.
+
+### Day 1/2 — check #10 (00:07), trend confirmed at upd ~28/130
 
 ### Day 1/2 — check #10 (00:07), trend confirmed at upd ~28/130
 
