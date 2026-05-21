@@ -109,20 +109,12 @@ def zero_extractor(_rgb: np.ndarray) -> tuple[int, bool]:
     return 0, False
 
 
-# Pinpointed 2026-05-21 on real q2_baseline.png: the CHI score is displayed in
-# the red-bordered box at these coordinates within the 2340x1080 frame.
-# The box contains both the "CHI" label (top half) and the score digits
-# (bottom half); pixel diff against the previous frame's ROI fires whenever
-# either changes — primarily when the score increments.
-CHI_SCORE_ROI = (260, 360, 970, 1120)   # y0, y1, x0, x1
+# All reward constants live in config.REWARD.
+from config import REWARD
 
-# Tuned by inspection: a quarter-clock tick changes ~10-15 mean-abs-diff;
-# a score change is ~30-50. Threshold above the clock tick floor.
-SCORE_DIFF_THRESHOLD = 25.0
-
-# After a score change is detected, we suppress further detections for N
-# frames to avoid double-counting the multi-frame scoreboard animation.
-SCORE_COOLDOWN_STEPS = 8
+CHI_SCORE_ROI        = REWARD.chi_score_roi
+SCORE_DIFF_THRESHOLD = REWARD.diff_threshold
+SCORE_COOLDOWN_STEPS = REWARD.cooldown_steps
 
 
 class ScoreboardDiffReward:

@@ -33,28 +33,22 @@ class HSVRange:
         return cv2.inRange(hsv, np.array(self.lo), np.array(self.hi))
 
 
-# Tuned 2026-05-21 on real Bouncy Basketball gameplay frames captured at
-# 2340x1080 from the pixel5_api31 AVD. Re-run the calibration notebook if the
-# AVD or game version changes.
-BALL_HSV       = HSVRange(lo=(8, 200, 180),  hi=(22, 255, 255))   # saturated orange basketball
-CHI_RED_HSV    = HSVRange(lo=(0, 180, 100),  hi=(8, 255, 220))    # CHI jersey red
-HOU_WHITE_HSV  = HSVRange(lo=(0, 0, 230),    hi=(180, 30, 255))   # HOU jersey near-white
+# All vision constants live in config.VISION. Re-tune there if the AVD or
+# game version changes (sample pixels from new frames in a notebook).
+from config import VISION
 
-# Frame is 2340x1080. Ignore regions that are reliable false-positive sources:
-#   y < 200:           scoreboard (red "CHI", white "HOU" text)
-#   y > 830:           below-court area
-#   x in [80, 280]:    left basketball hoop + rim (orange/red false positives)
-#   x in [2050, 2240]: right basketball hoop + rim
-# These are stored as native-resolution coords; downscale if running on a
-# smaller capture.
-COURT_Y_LO, COURT_Y_HI = 200, 830
-LEFT_RIM_X  = (80, 280)
-RIGHT_RIM_X = (2050, 2240)
+BALL_HSV       = HSVRange(lo=VISION.ball_hsv_lo,      hi=VISION.ball_hsv_hi)
+CHI_RED_HSV    = HSVRange(lo=VISION.chi_red_hsv_lo,   hi=VISION.chi_red_hsv_hi)
+HOU_WHITE_HSV  = HSVRange(lo=VISION.hou_white_hsv_lo, hi=VISION.hou_white_hsv_hi)
 
-MIN_PLAYER_BLOB = 400
-MAX_PLAYER_BLOB = 3500
-MIN_BALL_BLOB   = 50
-MAX_BALL_BLOB   = 800
+COURT_Y_LO, COURT_Y_HI = VISION.court_y_lo, VISION.court_y_hi
+LEFT_RIM_X  = VISION.left_rim_x
+RIGHT_RIM_X = VISION.right_rim_x
+
+MIN_PLAYER_BLOB = VISION.player_blob_min
+MAX_PLAYER_BLOB = VISION.player_blob_max
+MIN_BALL_BLOB   = VISION.ball_blob_min
+MAX_BALL_BLOB   = VISION.ball_blob_max
 
 
 def _largest_blobs_in_court(

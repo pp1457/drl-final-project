@@ -56,26 +56,30 @@ from vision import detect_pose
 # ---------------------------------------------------------------
 # Hyperparameters
 # ---------------------------------------------------------------
+# Defaults sourced from config.PPO / config.MODEL so tweaks live in one file.
+from config import PPO, MODEL
+
+
 @dataclass
 class Args:
-    env_id: str = "fake"               # 'fake' | 'bouncy'
+    env_id: str = "fake"               # 'fake' | 'bouncy' | 'clone'
     aux_mode: str = "baseline"         # 'baseline' | 'oca' | 'dpr'
-    aux_coef: float = 0.5
+    aux_coef: float = PPO.aux_coef
     seed: int = 0
-    total_timesteps: int = 1_000_000
+    total_timesteps: int = PPO.total_timesteps
     num_envs: int = 8
-    num_steps: int = 128
-    learning_rate: float = 2.5e-4
-    anneal_lr: bool = True
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    num_minibatches: int = 4
-    update_epochs: int = 4
-    clip_coef: float = 0.1
-    vf_coef: float = 0.5
-    ent_coef: float = 0.01
-    max_grad_norm: float = 0.5
-    frame_stack: int = 4
+    num_steps: int = PPO.num_steps
+    learning_rate: float = PPO.learning_rate
+    anneal_lr: bool = PPO.anneal_lr
+    gamma: float = PPO.gamma
+    gae_lambda: float = PPO.gae_lambda
+    num_minibatches: int = PPO.num_minibatches
+    update_epochs: int = PPO.update_epochs
+    clip_coef: float = PPO.clip_coef
+    vf_coef: float = PPO.vf_coef
+    ent_coef: float = PPO.ent_coef
+    max_grad_norm: float = PPO.max_grad_norm
+    frame_stack: int = MODEL.frame_stack
     log_dir: str = "runs"
     ckpt_dir: str = "checkpoints"
     ckpt_every: int = 50          # save every N updates

@@ -23,22 +23,11 @@ import numpy as np
 
 from env import EmulatorBackend, EmulatorEndpoint, NO_PRESS, PRESS
 
-# Bouncy Basketball is one-button. Tap-anywhere works, but the in-game tutorial
-# pointer hovers at the bottom-right of the gameplay screen at roughly this
-# coordinate (in landscape 2340x1080), so we send taps there for clarity.
-PRESS_COORD: tuple[int, int] = (1900, 860)
+# All action constants live in config.ACTIONS.
+from config import ACTIONS
 
-# Plain-adb can't keep a single touch held across separate invocations. Approx
-# "tap and hold" by sending an `input swipe x y x y duration_ms` that doesn't
-# move; the touch is held down for the swipe's duration. We pick PRESS_FRAME_MS
-# so that one PRESS action holds the touch for ~one env step at the agent's
-# control rate (frame-skip 4 over a ~30fps game ≈ 133 ms per step).
-PRESS_FRAME_MS = 130
-
-# Bouncy Basketball's jump charges up while the touch is held, so a single
-# PRESS action issued for N consecutive env steps charges the jump for N*130ms.
-# Releasing (next action = NO_PRESS) shoots. AdbBackend tracks the press state
-# below to issue the correct adb command per transition.
+PRESS_COORD: tuple[int, int] = ACTIONS.press_coord
+PRESS_FRAME_MS: int = ACTIONS.press_hold_ms
 
 
 def _adb(serial: str, *args: str, timeout: float = 10.0) -> bytes:

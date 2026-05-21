@@ -38,25 +38,17 @@ from typing import Optional
 from env import EmulatorEndpoint
 
 
-AVD_NAME = "pixel5_api31"
-SNAPSHOT = "clean_boot"
-EMU_LOG_DIR = Path("/tmp2") / os.environ.get("USER", "unknown") / "DRL_final" / "emu_logs"
-ENDPOINTS_FILE = Path("/tmp2") / os.environ.get("USER", "unknown") / "DRL_final" / "endpoints.json"
+# All orchestration constants live in config.EMU / config.PATHS.
+from config import EMU, PATHS
 
-# Base console port. We use an unusual range to avoid collisions with other
-# users on the same shared workstation. Console port = BASE_PORT + 2*rank,
-# adb port = console + 1.
-BASE_PORT = int(os.environ.get("EMU_BASE_PORT", 6554))
+AVD_NAME = EMU.avd_name
+SNAPSHOT_POOL = list(EMU.snapshot_pool)
+DEFAULT_BOOT_SNAPSHOT = EMU.default_boot_snapshot
+EMU_LOG_DIR = Path(PATHS.emu_logs)
+ENDPOINTS_FILE = Path(PATHS.endpoints_file)
+BASE_PORT = EMU.base_port
 
-# Emulator launch flags shared by every instance.
-COMMON_FLAGS = [
-    "-no-window",
-    "-no-audio",
-    "-no-boot-anim",
-    "-gpu", "swiftshader_indirect",
-    "-no-metrics",
-    "-no-snapshot-save",   # do not overwrite the saved snapshot at exit
-]
+COMMON_FLAGS = list(EMU.common_flags)
 
 
 def _serial_for(rank: int) -> str:
@@ -126,8 +118,8 @@ def bootstrap_single(apk_path: str) -> None:
         print("Boot complete. Installing APK...")
         _adb_for(serial, "install", "-r", apk_path, timeout=120.0)
         print("APK installed. Saving snapshot...")
-        _adb_for(serial, "emu", "avd", "snapshot", "save", SNAPSHOT, timeout=60.0)
-        print(f"Snapshot '{SNAPSHOT}' saved.")
+        _adb_for(serial, "emu", "avd", "snapshot", "save", DEFAULT_BOOT_SNAPSHOT, timeout=60.0)
+        print(f"Snapshot '{DEFAULT_BOOT_SNAPSHOT}' saved.")
     finally:
         print("Shutting down bootstrap emulator...")
         _adb_for(serial, "emu", "kill", check=False)
@@ -141,9 +133,13 @@ def launch_farm(n: int) -> list[EmulatorEndpoint]:
     """Start N read-only emulators sharing the saved snapshot."""
     EMU_LOG_DIR.mkdir(parents=True, exist_ok=True)
     procs: list[subprocess.Popen] = []
+    # Stagger between launches: shared-workstation watchdogs on ws10 will
+    # flag and kill the user's whole session if too many threads spawn in a
+    # tight window. config.EMU.launch_stagger_s controls this.
+    stagger_s = EMU.launch_stagger_s
     for rank in range(n):
-        procs.append(_launch_emulator(rank=rank, read_only=True, snapshot=SNAPSHOT))
-        time.sleep(2.0)  # stagger to avoid thundering-herd on emulator startup
+        procs.append(_launch_emulator(rank=rank, read_only=True, snapshot=DEFAULT_BOOT_SNAPSHOT))
+        time.sleep(stagger_s)
 
     endpoints: list[EmulatorEndpoint] = []
     for rank in range(n):
@@ -155,7 +151,7 @@ def launch_farm(n: int) -> list[EmulatorEndpoint]:
                 adb_serial=serial,
                 minicap_port=0,         # not yet -- AdbBackend doesn't use these
                 minitouch_port=0,
-                snapshot_name=SNAPSHOT,
+                snapshot_names=list(SNAPSHOT_POOL),
             )
         )
 
@@ -199,7 +195,7 @@ def supervise_once(endpoint: EmulatorEndpoint) -> bool:
         return False
     rank = (int(endpoint.adb_serial.split("-")[1]) - BASE_PORT) // 2
     print(f"[supervisor] {endpoint.adb_serial} appears dead; relaunching")
-    _launch_emulator(rank=rank, read_only=True, snapshot=SNAPSHOT)
+    _launch_emulator(rank=rank, read_only=True, snapshot=DEFAULT_BOOT_SNAPSHOT)
     _wait_boot(endpoint.adb_serial, timeout=180.0)
     return True
 
