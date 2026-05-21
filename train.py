@@ -23,8 +23,20 @@ Real run on the emulator farm (after Person A's backend lands):
 
 from __future__ import annotations
 
-import argparse
 import os
+
+# IMPORTANT: cap intra-op thread pools BEFORE importing cv2, torch, numpy.
+# With 144 cores on ws10, every worker process would default to a 144-thread
+# pool for OpenMP / BLAS / cv2. Across 6 AsyncVectorEnv workers + the main
+# process, the total thread count overflows the per-user pthread/process
+# limit (we hit `pthread_create: Resource temporarily unavailable`). The
+# emulators themselves already give us all the parallelism we need; each
+# worker just needs single-threaded numpy/cv2/torch.
+for _k in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS", "OPENCV_NUM_THREADS"):
+    os.environ[_k] = "1"   # force-override; subprocess workers inherit this
+
+import argparse
 import random
 import time
 from collections import deque
@@ -311,6 +323,11 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     device = torch.device(args.device)
+    # Cap intra-op torch threads too. The env-var prologue above covers OpenMP,
+    # but torch's own pool needs an explicit call. Inter-op stays at 1 to
+    # avoid cross-process thread contention.
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
 
     envs = gym.vector.AsyncVectorEnv(
         [make_env_fn(args.env_id, i, args.frame_stack) for i in range(args.num_envs)],

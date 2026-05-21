@@ -23,6 +23,11 @@ from typing import Optional
 import cv2
 import numpy as np
 
+# Cap cv2's internal thread pool. We run many worker processes; per-process
+# parallelism in cv2 only inflates the global thread count and risks running
+# out of pthreads on shared workstations like ws10.
+cv2.setNumThreads(1)
+
 
 @dataclasses.dataclass
 class HSVRange:
