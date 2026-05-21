@@ -12,7 +12,7 @@
 set -euo pipefail
 
 STEPS="${1:-50000}"
-N_ENVS="${2:-3}"   # N=3 was empirically more watchdog-survivable than N=4 on ws10's cluster
+N_ENVS="${2:-2}"   # N=2 after fixed-vision pipeline started tripping watchdog at N=3 (full HSV masks cost real CPU vs. broken-mask fast path)
 PROJ="/tmp2/$USER/DRL_final_project"
 
 # (mode, seed) -> ws assignment. ws9 was down at deploy time; the 9th run
