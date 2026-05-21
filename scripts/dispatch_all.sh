@@ -32,10 +32,13 @@ for assignment in "${ASSIGNMENTS[@]}"; do
   read -r MODE SEED WS <<< "$assignment"
   HOST="${WS}.csie.ntu.edu.tw"
   echo "[dispatch] $WS  $MODE seed=$SEED  steps=$STEPS"
-  # nohup + disown so the remote process survives our SSH closing.
-  # Local /tmp log captures the SSH-side output (boot messages, etc).
-  ssh "$HOST" "cd $PROJ && nohup ./scripts/launch_on_ws.sh $MODE $SEED $STEPS \
-      > /tmp/launch_${MODE}_${SEED}.log 2>&1 & disown" &
+  # -n closes stdin; nohup + disown survives the SSH closing. Redirecting
+  # output to a file on the remote side lets the SSH connection close as soon
+  # as the remote shell forks the launcher (otherwise sshd keeps the channel
+  # open waiting for the background process's stdout to close, which never
+  # happens until training finishes -> the dispatch script hangs forever).
+  ssh -n "$HOST" "cd $PROJ && nohup ./scripts/launch_on_ws.sh $MODE $SEED $STEPS \
+      > /tmp/launch_${MODE}_${SEED}.log 2>&1 < /dev/null & disown" &
 done
 
 wait

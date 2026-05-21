@@ -40,8 +40,11 @@ EMU_LAUNCH_STAGGER_S=8 .venv/bin/python orchestrate.py launch --n "$N_ENVS" \
 echo "[launch_on_ws] emulator farm up" >> "$LOG"
 adb devices >> "$LOG" 2>&1
 
-# Run training (blocking)
-.venv/bin/python train.py --env-id bouncy --aux-mode "$MODE" \
+# Run training (blocking).
+# `-u` = unbuffered stdout/stderr so PPO updates flush to the log on every print,
+# not when a ~4KB buffer fills (which would delay the first visible update by
+# ~15 minutes when redirected to a file).
+.venv/bin/python -u train.py --env-id bouncy --aux-mode "$MODE" \
   --seed "$SEED" --total-timesteps "$STEPS" --num-envs "$N_ENVS" \
   --num-steps 128 --num-minibatches 4 --update-epochs 4 \
   --ckpt-every 25 \
