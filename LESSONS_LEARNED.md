@@ -171,6 +171,31 @@ In default-difficulty Quick Game mode, the NO_PRESS-forever policy already score
 - **Evening:** distributed deploy across ws1–ws8 + ws10. First 9-run matrix launched at 19:38. Cron-based monitoring set up at 19:57. Multiple watchdog kills required N=3 fallback and ws-specific relaunches.
 - **Late evening:** analyzed first training results — discovered OCA-too-easy and full_rgb pickle tax. Fixed both. Restarted matrix at 21:06 with 4 fixes applied.
 
+### Day 1 — check #8 (23:12) — RESTART decision
+
+By upd ~55/130 (~42% through fast runs), the trend was unmistakable:
+
+```
+Returns trajectory per run (chronological):
+ws2 baseline:  1.33 → 1.22 → 0.92 → 0.73 → 0.61
+ws3 baseline:  1.00 → 1.11 → 0.83 → 0.67 → 0.56
+ws4 oca:       0.33 → 0.50 → 0.89 → 0.67 → 0.53 → 0.44   ← peaked then collapsed
+ws5 oca:       0.33 → 0.50 → 0.56 → 0.42 → 0.33 → 0.28
+ws10 dpr:      0.00 → 0.33 → 0.25 → 0.20 → 0.17
+ws7 dpr:       0.33 → 0.17 → 0.44 → 0.33 → 0.27 → 0.22
+```
+
+ALL runs monotonically decreasing in their most recent ~3 episodes. Cleanly correlated with entropy: most-committed runs (lowest entropy) had lowest returns.
+
+This is the classic PPO entropy-collapse failure in sparse-reward environments. In Bouncy Basketball, NO_PRESS-forever already scores ~0.5-1 per quarter (CHI auto-plays well), so "random uncommitted policy" is locally near-optimal. With ent_coef=0.01, PPO commits to whatever action got slightly positive advantage by chance — usually the wrong choice — and then degrades.
+
+**Decision: restart all 9 runs with ent_coef bumped 0.01 → 0.05.**
+
+This is a 5x increase in the entropy bonus. Standard for sparse-reward Atari is 0.01, but our reward density is even lower (one possible score per ~5 minutes of game), so we need more exploration pressure.
+
+**Paper-worthy finding** (regardless of how the restart goes):
+- "Premature policy commitment is a real failure mode in physics-based 1-button games" — the baseline random policy beats every learned policy at upd 55. This is itself worth noting as a methodological observation: sparse-reward arcade games may need higher entropy regularization than Atari benchmarks suggest.
+
 ### Day 1 — checks #6, ~upd 30/130 (22:45)
 
 **Returns are DECREASING in every run.** Across all 3 configs:
