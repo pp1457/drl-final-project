@@ -418,6 +418,23 @@ def main():
                 advantages[t] = lastgaelam = delta + args.gamma * args.gae_lambda * nonterminal * lastgaelam
             returns = advantages + values_buf
 
+        # Shift OCA targets by config.MODEL.oca_horizon_steps so the head
+        # predicts pose K steps into the future, not just t+1 (which the
+        # encoder solves trivially in <10 updates). Per-env shift, with the
+        # last K positions masked since we don't have a target that far ahead.
+        if args.aux_mode == "oca":
+            K = MODEL.oca_horizon_steps
+            if K > 1:
+                # oca_target_buf shape: (num_steps, num_envs, OCA_DIM)
+                # Want oca_target_buf[i] := original oca_target_buf[i+K], for i+K < num_steps.
+                shifted_t = torch.zeros_like(oca_target_buf)
+                shifted_m = torch.zeros_like(oca_mask_buf)
+                shifted_t[: args.num_steps - K] = oca_target_buf[K:]
+                shifted_m[: args.num_steps - K] = oca_mask_buf[K:]
+                # Tail K positions stay zero in both target and mask (mask=0 -> ignored by loss)
+                oca_target_buf = shifted_t
+                oca_mask_buf = shifted_m
+
         # Flatten the batch
         b_obs = obs_buf.reshape((-1,) + obs_shape)
         b_next_obs = next_obs_buf.reshape((-1,) + obs_shape)

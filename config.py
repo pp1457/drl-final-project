@@ -176,6 +176,12 @@ class ModelConfig:
     # OCA head: MLP regressing 10-dim pose target
     oca_hidden_dim:   int   = 128
     oca_output_dim:   int   = 10
+    # How many agent steps into the future OCA predicts the pose. With
+    # frame_skip=4 and ~33ms/game frame, K=4 -> predict ~528ms ahead.
+    # Earlier smoke tests showed K=1 lets the encoder solve the task trivially
+    # (aux loss -> 0 by upd 6, killing the representation-shaping signal for
+    # the remaining 91 updates). K>1 forces actual forward dynamics.
+    oca_horizon_steps: int  = 4
 
     # DPR decoder: transposed convs to reconstruct an 84x84 grayscale frame
     dpr_decoder_in_channels: int = 64
@@ -209,6 +215,11 @@ class PPOConfig:
     # Total environment steps per training run. The deadline forces us to a
     # modest count; we argue in the paper that the comparison is what matters.
     total_timesteps:  int   = 1_000_000
+
+    # Episode length cap (per agent step). 1024 instead of 4096 because at
+    # ~1 SPS/env each episode lasts ~17 minutes wall clock; with 1024 we get
+    # an episode (and a usable 'ret' value for logging/eval) every ~4 minutes.
+    max_episode_steps: int  = 1024
 
 
 PPO = PPOConfig()

@@ -165,15 +165,17 @@ class BouncyBasketballEnv(gym.Env):
         backend: EmulatorBackend,
         pose_extractor,           # callable: (rgb_frame) -> dict (see vision.py)
         reward_extractor,         # callable: (rgb_frame) -> (score, done)
-        max_episode_steps: int = 4096,
-        frame_skip: int = 4,
+        max_episode_steps: Optional[int] = None,   # default from config.PPO
+        frame_skip: Optional[int] = None,          # default from config.ACTIONS
     ) -> None:
+        from config import ACTIONS, PPO  # local import keeps env.py importable
+                                          # even when config isn't on path
         super().__init__()
         self.backend = backend
         self.pose_extractor = pose_extractor
         self.reward_extractor = reward_extractor
-        self.max_episode_steps = max_episode_steps
-        self.frame_skip = max(1, int(frame_skip))
+        self.max_episode_steps = max_episode_steps if max_episode_steps is not None else PPO.max_episode_steps
+        self.frame_skip = max(1, int(frame_skip if frame_skip is not None else ACTIONS.frame_skip))
 
         self.observation_space = spaces.Box(
             low=0, high=255, shape=(OBS_H, OBS_W), dtype=np.uint8
@@ -266,8 +268,12 @@ class BouncyBasketballEnv(gym.Env):
     def _build_info(self, rgb: np.ndarray, score_delta: float) -> dict[str, Any]:
         pose = self.pose_extractor(rgb)
         target, mask = _pack_oca_from_pose(pose, frame_w=rgb.shape[1], frame_h=rgb.shape[0])
+        # NOTE: do NOT include `full_rgb` here. AsyncVectorEnv pickles the info
+        # dict and ships it through a pipe to the main process on every step;
+        # the 7.5 MB RGB frame costs ~500 ms per step of IPC overhead and the
+        # main process doesn't even use it (only the worker uses it for pose
+        # + reward extraction, both of which happen here before this return).
         return {
-            "full_rgb": rgb,
             "oca_target": target,
             "oca_mask": mask,
             "raw_score": self._raw_score,
