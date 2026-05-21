@@ -208,7 +208,12 @@ class PPOConfig:
     gae_lambda:       float = 0.95
     clip_coef:        float = 0.1
     vf_coef:          float = 0.5
-    ent_coef:         float = 0.01
+    # ent_coef 0.01 → 0.05: previous training showed PPO committing to a
+    # worse-than-random policy by upd ~30, then degrading further. The lowest-
+    # entropy runs had the lowest returns. Increased entropy bonus prevents
+    # premature commitment in this sparse-reward setting. Standard Atari uses
+    # 0.01; this game's reward density is lower, so we need more exploration.
+    ent_coef:         float = 0.05
     max_grad_norm:    float = 0.5
     num_steps:        int   = 128
     num_minibatches:  int   = 4
