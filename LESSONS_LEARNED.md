@@ -171,6 +171,20 @@ In default-difficulty Quick Game mode, the NO_PRESS-forever policy already score
 - **Evening:** distributed deploy across ws1–ws8 + ws10. First 9-run matrix launched at 19:38. Cron-based monitoring set up at 19:57. Multiple watchdog kills required N=3 fallback and ws-specific relaunches.
 - **Late evening:** analyzed first training results — discovered OCA-too-easy and full_rgb pickle tax. Fixed both. Restarted matrix at 21:06 with 4 fixes applied.
 
+### Day 1 mid-training observations (after re-dispatch ~21:35)
+
+Once the four fixes landed (drop `full_rgb`, OCA K=8, max_episode_steps=1024, N=3 default), the training was healthier and produced these mid-training findings:
+
+- **OCA aux loss is no longer monotonically collapsing** — it oscillates between ~0.0001 and ~0.04, with periodic spikes (e.g. upd 17 for both ws4 and ws5 oca runs, synchronized). The spike indicates PPO's gradient direction can transiently push the encoder away from its OCA-solving configuration; the head then has to relearn. **This is the desired behavior** for a representation-shaping aux task and confirms K=8 is the right horizon.
+
+- **At upd ~22 (early, ~17% through), baseline > OCA > DPR in mean return** (0.89 vs 0.56 vs 0.28 across 3 seeds each). This is *counter* to our hypothesis but the data is super-noisy at this stage (3-5 episodes per run completed). If the ranking holds through the end of training, it's a paper finding in itself: aux tasks may *interfere* with PPO's early-stage exploration even if they help asymptotically — worth investigating in the discussion.
+
+- **Multiple OCA seeds' aux losses spike at the same update.** Synchronization across seeds is evidence of a shared PPO-gradient direction at that point in training. Could be the "first policy commitment" moment — when the policy stops being uniform-random and starts preferring one action systematically. Possibly an interesting analysis: plot aux-loss spike timing vs. entropy drop.
+
+- **Entropy drops happen unevenly across seeds.** ws1 baseline, ws5 OCA, ws8 DPR show entropy dropping ~0.69 → 0.55-0.65, indicating policy commitment. Other 6 seeds still at ~0.69 (uniform). This variance in "when does the policy commit" is worth noting in the paper — 3 seeds may not be enough to characterize the distribution well.
+
+- **The IPC fix (drop info["full_rgb"]) only gave a marginal speedup** — SPS went from ~1-2 to ~2-3 per ws, not the 3× I predicted. Either the pickle cost was lower than estimated or other overhead now dominates. Honest correction for the paper: the 500ms-per-step IPC estimate was an over-count.
+
 ### Day 2–4 (planned)
 
 - Continue training; harvest checkpoints; run §5.3 robustness eval on the Python clone; run §5.5 detector validation; draft figures; write paper.
