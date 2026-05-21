@@ -171,6 +171,29 @@ In default-difficulty Quick Game mode, the NO_PRESS-forever policy already score
 - **Evening:** distributed deploy across ws1–ws8 + ws10. First 9-run matrix launched at 19:38. Cron-based monitoring set up at 19:57. Multiple watchdog kills required N=3 fallback and ws-specific relaunches.
 - **Late evening:** analyzed first training results — discovered OCA-too-easy and full_rgb pickle tax. Fixed both. Restarted matrix at 21:06 with 4 fixes applied.
 
+### Day 1/2 — check #10 (00:07), trend confirmed at upd ~28/130
+
+```
+Config     Returns (3 seeds)     Mean    Trend
+baseline   0.33, 0.67, 0.33      0.443   slightly up from check #9 (0.22)
+OCA        0.89, 1.00, 0.67      0.853   strongly up from check #9 (0.67)
+DPR        0.78, 0.67, 0.33      0.593   slightly down from check #9 (0.67)
+```
+
+**Ordering matches proposal hypothesis: OCA > DPR > baseline.** OCA's sparse physics-relevant supervision is outperforming DPR's dense pixel reconstruction, which is outperforming pure PPO.
+
+Most return trajectories are STABLE or RISING (none of the monotone decline we saw in the previous run). Examples:
+- ws4 oca: 1.00 → 0.83 → 0.89 (stable around 0.9)
+- ws5 oca: 0.67 → 1.00 (rising)
+- ws7 dpr: 0.67 → 0.83 → 0.78 (stable)
+- ws2 baseline: 0.33 → 0.83 → 0.67 (rising)
+
+Entropy stays near max (0.67-0.69 for 8/9 seeds; ws5 oca dropped to 0.58 — modest commitment). With ent_coef=0.05 the policy isn't collapsing.
+
+OCA aux loss profile: mostly 0.0001-0.0014 with occasional 0.027 spikes (e.g. ws6 upd 17). Small absolute value but nonzero throughout — gradient flow continues to shape the encoder.
+
+If these means hold to convergence, this is **the proposal's headline result already visible**: structured object-centric prediction (10-dim coords) outperforms unstructured pixel-level prediction (84×84 reconstruction) as a representation shaper for physics-based RL.
+
 ### Day 1 — check #9 (23:40), early but striking reversal
 
 Restart with ent_coef=0.05 produced dramatically different early results at upd ~14/130:
