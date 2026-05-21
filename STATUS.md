@@ -1,6 +1,18 @@
 # DRL Final Project — Status
 
-**Last updated:** 2026-05-21 ~16:05 (Day 1 of 5 — deadline 2026-05-25 23:59)
+**Last updated:** 2026-05-21 ~17:55 (Day 1 of 5 — deadline 2026-05-25 23:59)
+
+## Recent (since last status update)
+
+- `git init` done; 4 commits: initial → frame skip → config.py refactor → thread caps
+- Frame skip = 4 wired into `BouncyBasketballEnv.step()` (one adb call per agent step, held for 132 ms)
+- `config.py` centralizes VISION / REWARD / ACTIONS / EMU / MODEL / PPO / PATHS constants
+- Multi-snapshot opponent pool: `env.reset()` picks uniformly from `EmulatorEndpoint.snapshot_names`
+- ws10 has a per-user watchdog that killed our 12-emulator launch and our first 6-worker training run (pthread exhaustion). Mitigated by:
+  - 5 s launch stagger in `orchestrate.py` (was 2 s)
+  - Force `OMP_NUM_THREADS=1` etc. + `cv2.setNumThreads(1)` + `torch.set_num_threads(1)` in `train.py`/`vision.py`
+- `minicap_backend.py` scaffolded as a future drop-in (5–10× throughput once binaries are pushed)
+
 
 ## What works end-to-end
 
