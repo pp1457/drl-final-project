@@ -134,14 +134,15 @@ _GAME_OVER_PIXEL_THRESHOLD = 1500
 def is_game_over(rgb_frame: np.ndarray) -> bool:
     """Return True if the frame looks like the post-match GAME OVER screen.
 
-    Tested against the Day-1 stuck frames (GAME OVER) and clean gameplay
-    frames (Q1 mid-play); separates cleanly via a single threshold."""
+    Input MUST be RGB (what EmulatorBackend.grab_frame() returns). Tested
+    against Day-1 stuck frames (GAME OVER → ~3600 red pixels) and clean
+    gameplay frames (~0 red pixels); separates cleanly via threshold 1500.
+    """
     y0, y1 = _GAME_OVER_Y_BAND
     H, W = rgb_frame.shape[:2]
     if y1 > H:
         return False
-    bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
-    hsv = cv2.cvtColor(bgr[y0:y1], cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(rgb_frame[y0:y1], cv2.COLOR_RGB2HSV)
     red1 = cv2.inRange(hsv, np.array([0, 180, 100]), np.array([8, 255, 255]))
     red2 = cv2.inRange(hsv, np.array([170, 180, 100]), np.array([180, 255, 255]))
     red = cv2.bitwise_or(red1, red2)

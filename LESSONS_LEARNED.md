@@ -171,7 +171,7 @@ In default-difficulty Quick Game mode, the NO_PRESS-forever policy already score
 - **Evening:** distributed deploy across ws1–ws8 + ws10. First 9-run matrix launched at 19:38. Cron-based monitoring set up at 19:57. Multiple watchdog kills required N=3 fallback and ws-specific relaunches.
 - **Late evening:** analyzed first training results — discovered OCA-too-easy and full_rgb pickle tax. Fixed both. Restarted matrix at 21:06 with 4 fixes applied.
 
-### Day 2 — 01:30, pivot to clone training
+### Day 2 — 01:30, diagnosed garbage data via frame-health instrumentation
 
 Frame-health instrumentation (`oca_mask.sum() per rollout`) added to train.py confirmed that **the Android-emulator training pipeline was producing garbage data**:
 
@@ -187,28 +187,9 @@ Root cause is unclear but likely a combination of:
 - Match cycles are extremely fast on default difficulty (CHI auto-plays so well that matches end in seconds), leaving most wall-time on stats/GAME OVER screens
 - Cumulative effect: workers see brief flashes of gameplay (when REMATCH does happen to work) but spend most time on transition screens producing no useful signal
 
-**Decision: pivot training to the Python clone (`clone_env.py`).**
+**Plan: fix the worker reset() to verify gameplay actually starts before returning, instead of relying on hardcoded sleeps. Stay on the real Android APK as the proposal specifies. The clone_env stays as the §5.3 robustness eval target only.**
 
-Clone training observed at upd 1-8 of a smoke test:
-```
-sps 58-61   fh 0.75/4.5   aux 0.246 → 0.004
-```
-
-- **30-60x faster than Android** (60 SPS vs 1-3)
-- **Healthy detection rate** (75% any-detected vs 3-6%)
-- **Engine-perfect OCA targets** (no CV pipeline noise to debate in the paper)
-- **No menu/stats/GAME OVER cycles** to fight
-
-Cost: paper drops the "trained on real Android APK" angle to **future work / limitations**. The OCA vs DPR vs baseline comparison is still scientifically valid on a clean physics environment — that's what controlled experiments are FOR.
-
-Launched 9 clone trainings in parallel on ws10 at 01:30; ETA ~15 min wall clock to all complete (vs ~3.5 hours for the Android matrix that would have produced garbage anyway). Even with restarts and seed sweeps, the clone pipeline lets us iterate fast enough to actually explore design choices for the paper.
-
-What we KEEP from the Android work:
-- `research_idea.md` proposal structure is unchanged — only the env source changes
-- `vision.py` HSV pipeline still relevant (could be a "real sim" eval scenario for sim-to-real transfer; future work)
-- `clone_env.py` was always in the design for §5.3 robustness eval — it just becomes the primary env now too
-- `minicap_backend.py`, `adb_backend.py`, all the orchestration tooling — documented engineering effort, doesn't need re-running
-- LESSONS_LEARNED gets a full "what we attempted with Android" section for the paper's limitations + appendix
+Confirmed via clone-env smoke test that the network and PPO loop are sound (sps 60, fh 0.75/4.5, aux 0.246 → 0.004 in 8 updates). So the bug is specifically in how env.reset() interacts with the Android worker subprocesses — not in the model or training loop itself. That's good news; means we can target the fix narrowly.
 
 ### Day 1/2 — check #10 (00:07), trend confirmed at upd ~28/130
 

@@ -101,7 +101,7 @@ def _pose_from_shoes(blobs: list[tuple[float, float, float]]) -> Optional[tuple[
     return cx, cy, float(np.sin(theta)), float(np.cos(theta))
 
 
-def detect_pose(frame_bgr: np.ndarray) -> dict[str, Optional[tuple]]:
+def detect_pose(frame_rgb: np.ndarray) -> dict[str, Optional[tuple]]:
     """Extract ball + per-team centroids and orientation from a Bouncy Basketball
     frame. Returns dict with:
         ball   : (x, y) or None
@@ -110,11 +110,13 @@ def detect_pose(frame_bgr: np.ndarray) -> dict[str, Optional[tuple]]:
                  players. None if fewer than 2 CHI blobs are found.
         opp    : same but for HOU.
 
-    Inputs MAY be either RGB or BGR — the function tolerates either since the
-    HSV ranges have been calibrated; cv2.cvtColor with COLOR_BGR2HSV gives
-    consistent hue for both interpretations once the H wrap-around is handled.
+    Input MUST be RGB (channel order [R, G, B], not BGR). This matches what
+    `EmulatorBackend.grab_frame()` returns. The previous version used
+    COLOR_BGR2HSV which silently produced wrong hue values when fed RGB —
+    that bug caused detection to fail in workers (fh ~ 0.03) while standalone
+    tests using cv2.imread (which returns BGR) appeared to work.
     """
-    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2HSV)
 
     ball_blobs = _largest_blobs_in_court(BALL_HSV.mask(hsv), k=1, min_area=MIN_BALL_BLOB, max_area=MAX_BALL_BLOB)
     ball = (ball_blobs[0][0], ball_blobs[0][1]) if ball_blobs else None

@@ -205,21 +205,31 @@ class BouncyBasketballEnv(gym.Env):
         self._step_count = 0
         self._raw_score = 0
         # Advance from whatever screen the snapshot landed on into active play.
-        # Fire all known "go" button locations; exactly one will hit, the
-        # others are no-ops on empty regions.
-        #
-        # NOTE: snapshot load fails silently in -read-only emulator mode, so
-        # the snapshot reload above is best-effort and may not actually reset
-        # state. The REMATCH tap below is the real escape hatch for
-        # GAME OVER screens — Day 1 we discovered every emulator got stuck
-        # there after Q4 ends.
+        # Strategy: tap the three known "go" buttons (PLAY, NEXT QUARTER,
+        # REMATCH), then POLL until we see a gameplay frame (=at least one
+        # object detected and not on a GAME OVER screen). Hardcoded sleeps
+        # weren't enough — game has loading screens / animations that don't
+        # match a known button or detection but eventually advance.
         if hasattr(self.backend, "send_tap"):
-            self.backend.send_tap(1493, 918)   # PLAY      (team-select)
-            time.sleep(1.2)
-            self.backend.send_tap(1170, 793)   # NEXT QUARTER (stats screen)
-            time.sleep(1.2)
-            self.backend.send_tap(1366, 793)   # REMATCH   (GAME OVER screen)
-            time.sleep(1.5)
+            for retry in range(6):
+                self.backend.send_tap(1493, 918)   # PLAY        (team-select)
+                time.sleep(0.5)
+                self.backend.send_tap(1170, 793)   # NEXT QUARTER (stats screen)
+                time.sleep(0.5)
+                self.backend.send_tap(1366, 793)   # REMATCH     (GAME OVER)
+                time.sleep(2.0)                    # wait for transition / loading
+                # Verify we reached gameplay before returning.
+                check_rgb = self.backend.grab_frame()
+                check_pose = self.pose_extractor(check_rgb)
+                detected = any(check_pose.get(k) is not None for k in ("ball", "player", "opp"))
+                # If is_game_over still True we're definitely still on a stats/GAME OVER
+                # screen; the import below is local to avoid a cycle at module load.
+                from reward import is_game_over as _is_over
+                stuck_on_overlay = _is_over(check_rgb)
+                if detected and not stuck_on_overlay:
+                    break
+            # Whether we broke out cleanly or exhausted retries, continue;
+            # the caller will see the obs we ended up with.
         # Best-effort reset for stateful reward extractors.
         rs = getattr(self, "_reward_state", None)
         if rs is not None and hasattr(rs, "reset"):
