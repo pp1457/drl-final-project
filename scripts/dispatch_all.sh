@@ -14,8 +14,8 @@ set -euo pipefail
 STEPS="${1:-50000}"
 PROJ="/tmp2/$USER/DRL_final_project"
 
-# (mode, seed) -> ws assignment. We leave ws10 free as the controller; if you
-# want to use it, swap something onto ws10. Adjust if any ws is down.
+# (mode, seed) -> ws assignment. ws9 was down at deploy time; the 9th run
+# goes on ws10 (the controller). Edit if a machine is offline.
 ASSIGNMENTS=(
   "baseline 0 ws1"
   "baseline 1 ws2"
@@ -25,7 +25,7 @@ ASSIGNMENTS=(
   "oca 2 ws6"
   "dpr 0 ws7"
   "dpr 1 ws8"
-  "dpr 2 ws9"
+  "dpr 2 ws10"
 )
 
 for assignment in "${ASSIGNMENTS[@]}"; do

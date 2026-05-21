@@ -14,7 +14,7 @@ SRC_FINAL="/tmp2/$USER/DRL_final"
 SRC_PROJ="/tmp2/$USER/DRL_final_project"
 
 echo "[deploy] $WS -- sanity checking remote..."
-ssh -o ConnectTimeout=5 "$HOST" "mkdir -p $SRC_FINAL $SRC_PROJ && echo OK"
+ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=5 "$HOST" "mkdir -p $SRC_FINAL $SRC_PROJ && echo OK"
 
 echo "[deploy] $WS -- syncing SDK + AVD + snapshots ($SRC_FINAL/)..."
 rsync -az --delete --exclude='emu_logs/' --exclude='frames/' --exclude='*.log' \
