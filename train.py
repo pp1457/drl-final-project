@@ -488,6 +488,12 @@ def main():
                 optimizer.step()
 
         sps = int(global_step / (time.time() - start_time))
+        # Frame-health stats over the just-collected rollout: what fraction
+        # of frames had ANY object detected (i.e. weren't all-zero mask),
+        # and the mean number of detected components per frame (out of 10).
+        # If frame_health is low we're training on garbage / stuck frames.
+        mask_any_detected = (oca_mask_buf.sum(dim=-1) > 0).float().mean().item()
+        mask_mean_components = oca_mask_buf.sum(dim=-1).mean().item()
         writer.add_scalar("charts/sps", sps, global_step)
         writer.add_scalar("losses/policy_loss", pg_loss.item(), global_step)
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
@@ -495,13 +501,16 @@ def main():
         writer.add_scalar("losses/aux_loss", aux_loss.item(), global_step)
         writer.add_scalar("charts/clipfrac", float(np.mean(clipfracs)), global_step)
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
+        writer.add_scalar("charts/frame_health_any_detected", mask_any_detected, global_step)
+        writer.add_scalar("charts/frame_health_components_mean", mask_mean_components, global_step)
         if ep_returns:
             writer.add_scalar("charts/episode_return_mean", float(np.mean(ep_returns)), global_step)
         print(
             f"upd {update}/{num_updates} step {global_step} sps {sps} "
             f"pg {pg_loss.item():.3f} v {v_loss.item():.3f} "
             f"ent {ent_loss.item():.3f} aux {aux_loss.item():.4f} "
-            f"ret {np.mean(ep_returns) if ep_returns else float('nan'):.2f}"
+            f"ret {np.mean(ep_returns) if ep_returns else float('nan'):.2f} "
+            f"fh {mask_any_detected:.2f}/{mask_mean_components:.1f}"
         )
 
         if update % args.ckpt_every == 0 or update == num_updates:
