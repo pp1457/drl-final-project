@@ -48,12 +48,21 @@ class VisionConfig:
     # Spatial filter (native landscape coords on 2340x1080 frame).
     # Anything outside [court_y_lo, court_y_hi] is filtered out as scoreboard /
     # below-floor area.
-    court_y_lo: int = 200
+    # IMPORTANT: court_y_lo bumped 200 -> 410 because the scoreboard's
+    # 'CHI/HOU' text labels and basketball icon sit at y~268..360 and were
+    # being detected as players/ball (false positives that polluted OCA
+    # targets across all training runs of Day 1).
+    court_y_lo: int = 410
     court_y_hi: int = 830
     # The basketball rims are saturated orange/red and produce false-positive
     # blobs. Exclude these x-bands from detection.
     left_rim_x:  tuple[int, int] = (80,   280)
     right_rim_x: tuple[int, int] = (2050, 2240)
+    # Central scoreboard exclusion zone (x range applies for y < court_y_lo
+    # only via the y filter above; documented here for future spatial-mask
+    # extensions).
+    scoreboard_x: tuple[int, int] = (900, 1450)
+    scoreboard_y_max: int = 400
 
     # Blob area bounds, in pixels at native 2340x1080.
     player_blob_min: int = 400

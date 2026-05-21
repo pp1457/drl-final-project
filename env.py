@@ -204,15 +204,21 @@ class BouncyBasketballEnv(gym.Env):
         self.backend.load_snapshot(chosen)
         self._step_count = 0
         self._raw_score = 0
-        # Advance from whatever screen the snapshot landed on (team-select OR
-        # end-of-quarter stats) into active play. The PLAY button (team-select)
-        # and the NEXT QUARTER button (stats screen) are both green and live at
-        # landscape coords found via OpenCV — fire both, exactly one will hit.
-        # On an in-game snapshot both taps hit empty floor (no-op).
+        # Advance from whatever screen the snapshot landed on into active play.
+        # Fire all known "go" button locations; exactly one will hit, the
+        # others are no-ops on empty regions.
+        #
+        # NOTE: snapshot load fails silently in -read-only emulator mode, so
+        # the snapshot reload above is best-effort and may not actually reset
+        # state. The REMATCH tap below is the real escape hatch for
+        # GAME OVER screens — Day 1 we discovered every emulator got stuck
+        # there after Q4 ends.
         if hasattr(self.backend, "send_tap"):
-            self.backend.send_tap(1493, 918)   # PLAY (team-select)
-            time.sleep(2.0)
+            self.backend.send_tap(1493, 918)   # PLAY      (team-select)
+            time.sleep(1.2)
             self.backend.send_tap(1170, 793)   # NEXT QUARTER (stats screen)
+            time.sleep(1.2)
+            self.backend.send_tap(1366, 793)   # REMATCH   (GAME OVER screen)
             time.sleep(1.5)
         # Best-effort reset for stateful reward extractors.
         rs = getattr(self, "_reward_state", None)

@@ -117,6 +117,37 @@ SCORE_DIFF_THRESHOLD = REWARD.diff_threshold
 SCORE_COOLDOWN_STEPS = REWARD.cooldown_steps
 
 
+# GAME OVER detection: the post-match screen has "GAME OVER" / "RED WINS!" /
+# "BLUE WINS!" in saturated red text near y=20-120, x roughly across the
+# middle. Detect by counting saturated-red pixels in that top strip — any
+# normal gameplay frame has very little red text up there (just the small
+# "CHI" scoreboard label which is ~5k red pixels at most). GAME OVER triples
+# that with the big "GAME OVER" + "RED WINS!" headers.
+_GAME_OVER_Y_BAND   = (20, 130)
+# Measured Day 1: clean gameplay frames have ~0 red pixels in this top strip
+# (the 'CHI' scoreboard label is at y=270, below this band). The GAME OVER
+# screen has ~3600 saturated-red pixels from the 'GAME OVER' / 'WINS!' text.
+# Threshold of 1500 cleanly separates the two with margin.
+_GAME_OVER_PIXEL_THRESHOLD = 1500
+
+
+def is_game_over(rgb_frame: np.ndarray) -> bool:
+    """Return True if the frame looks like the post-match GAME OVER screen.
+
+    Tested against the Day-1 stuck frames (GAME OVER) and clean gameplay
+    frames (Q1 mid-play); separates cleanly via a single threshold."""
+    y0, y1 = _GAME_OVER_Y_BAND
+    H, W = rgb_frame.shape[:2]
+    if y1 > H:
+        return False
+    bgr = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+    hsv = cv2.cvtColor(bgr[y0:y1], cv2.COLOR_BGR2HSV)
+    red1 = cv2.inRange(hsv, np.array([0, 180, 100]), np.array([8, 255, 255]))
+    red2 = cv2.inRange(hsv, np.array([170, 180, 100]), np.array([180, 255, 255]))
+    red = cv2.bitwise_or(red1, red2)
+    return int(red.sum() // 255) > _GAME_OVER_PIXEL_THRESHOLD
+
+
 class ScoreboardDiffReward:
     """Reward extractor that detects CHI score increments by pixel-diffing the
     CHI score ROI between consecutive frames.
@@ -160,6 +191,7 @@ class ScoreboardDiffReward:
                 self._score += 1
                 self._cooldown = SCORE_COOLDOWN_STEPS
         self._prev_patch = patch
-        # Match-end detection deferred — assume episode ends via env's
-        # max_episode_steps truncation.
-        return self._score, False
+        # Detect GAME OVER -> signal episode done so env.reset() can fire
+        # the REMATCH tap and we don't keep stepping on a frozen frame.
+        done = is_game_over(rgb_frame)
+        return self._score, done
