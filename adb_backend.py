@@ -14,7 +14,6 @@ Action -> touch coordinate mapping:
 
 from __future__ import annotations
 
-import io
 import subprocess
 import time
 from typing import Optional
@@ -75,28 +74,34 @@ class AdbBackend(EmulatorBackend):
         return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
     # ---- action injection ---------------------------------------------
-    def send_action(self, action: int) -> None:
-        """Send NO_PRESS or PRESS to the emulator.
+    def send_action(self, action: int, hold_ms: int = PRESS_FRAME_MS) -> None:
+        """Send NO_PRESS or PRESS to the emulator, holding for `hold_ms`.
 
-        Plain adb can't truly hold a touch across calls, so a PRESS issues a
-        130ms `input swipe` (touch down, hold, touch up). A run of consecutive
-        PRESS actions therefore charges the jump for N*130ms — close enough.
+        For PRESS we issue an `input swipe x y x y hold_ms` — this is a
+        zero-length swipe that holds the touch down for the requested duration.
+        The adb call blocks until the swipe completes, so wall-clock time per
+        call ≈ hold_ms + adb roundtrip overhead.
+
+        For NO_PRESS we sleep `hold_ms` so game time still advances by the
+        same amount, keeping agent steps a consistent length regardless of
+        action. (Without this, NO_PRESS steps would race through real time.)
 
         Transition PRESS -> NO_PRESS is the shoot trigger in Bouncy Basketball;
-        we don't need to send any explicit RELEASE event because the previous
-        PRESS's swipe already released the touch when its duration expired.
+        no explicit RELEASE event is needed because the previous PRESS's swipe
+        already released the touch when its duration expired.
         """
         if action == PRESS:
             x, y = PRESS_COORD
             _adb(
                 self.endpoint.adb_serial,
                 "shell", "input", "swipe",
-                str(x), str(y), str(x), str(y), str(PRESS_FRAME_MS),
+                str(x), str(y), str(x), str(y), str(int(hold_ms)),
+                timeout=max(10.0, hold_ms / 1000 + 5),
             )
             self._pressing = True
         else:  # NO_PRESS
             self._pressing = False
-            # nothing to send; the prior PRESS's swipe already released
+            time.sleep(hold_ms / 1000.0)
 
     # ---- utility taps (UI navigation, not RL actions) -----------------
     def send_tap(self, x: int, y: int) -> None:

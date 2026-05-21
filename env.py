@@ -144,7 +144,19 @@ class EmulatorBackend:
 
 
 class BouncyBasketballEnv(gym.Env):
-    """One emulator = one env instance. Vector-wrap externally for parallelism."""
+    """One emulator = one env instance. Vector-wrap externally for parallelism.
+
+    Frame skip is applied INSIDE this env (not via an external wrapper) because
+    the agent's action — PRESS — is meant to be *held* across consecutive game
+    frames to charge a jump. We repeat the action for `frame_skip` game frames
+    per agent step, but emit only one obs/reward to the policy. Aux targets
+    (OCA, DPR) come from the LAST of the skipped frames, since that's the
+    obs the policy actually sees.
+
+    With frame_skip=4 and ~1 game frame ~ 130ms, each agent step is ~520ms of
+    game time, which is roughly the duration of a normal jump and lets the
+    policy decide at a sensible cadence without micro-managing each frame.
+    """
 
     metadata = {"render_modes": []}
 
@@ -154,12 +166,14 @@ class BouncyBasketballEnv(gym.Env):
         pose_extractor,           # callable: (rgb_frame) -> dict (see vision.py)
         reward_extractor,         # callable: (rgb_frame) -> (score, done)
         max_episode_steps: int = 4096,
+        frame_skip: int = 4,
     ) -> None:
         super().__init__()
         self.backend = backend
         self.pose_extractor = pose_extractor
         self.reward_extractor = reward_extractor
         self.max_episode_steps = max_episode_steps
+        self.frame_skip = max(1, int(frame_skip))
 
         self.observation_space = spaces.Box(
             low=0, high=255, shape=(OBS_H, OBS_W), dtype=np.uint8
@@ -207,10 +221,27 @@ class BouncyBasketballEnv(gym.Env):
         info = self._build_info(rgb, score_delta=0)
         return obs, info
 
+    # One game frame at the emulator's native ~30 fps. Used to convert
+    # frame_skip into the touch-hold duration we pass to the backend.
+    _GAME_FRAME_MS = 33
+
     def step(
         self, action: int
     ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
-        self.backend.send_action(int(action))
+        """Apply `action`, held for `frame_skip` game frames, then read one obs.
+
+        Efficient frame skip: ONE adb call (holding the touch for the full
+        skip duration) + ONE screencap per agent step. The action's effect
+        plays out across the skipped frames inside the emulator while Python
+        blocks on the swipe call.
+        """
+        hold_ms = self.frame_skip * self._GAME_FRAME_MS
+        # send_action accepts hold_ms on AdbBackend; fall back to default on
+        # backends that don't (e.g. FakeBackend).
+        try:
+            self.backend.send_action(int(action), hold_ms=hold_ms)
+        except TypeError:
+            self.backend.send_action(int(action))
         rgb = self.backend.grab_frame()
         score, episode_done = self.reward_extractor(rgb)
         reward = float(max(0, score - self._raw_score))
