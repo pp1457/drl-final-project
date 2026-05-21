@@ -136,7 +136,7 @@ def _make_bouncy_env(rank: int) -> gym.Env:
         backend=backend,
         pose_extractor=detect_pose,
         reward_extractor=reward_extractor,
-        max_episode_steps=4096,
+        # max_episode_steps: leave None → defaults to config.PPO.max_episode_steps
     )
     # Stash the reward extractor so reset() can reset its internal state.
     env._reward_state = reward_extractor  # type: ignore[attr-defined]

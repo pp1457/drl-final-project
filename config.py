@@ -177,11 +177,16 @@ class ModelConfig:
     oca_hidden_dim:   int   = 128
     oca_output_dim:   int   = 10
     # How many agent steps into the future OCA predicts the pose. With
-    # frame_skip=4 and ~33ms/game frame, K=4 -> predict ~528ms ahead.
-    # Earlier smoke tests showed K=1 lets the encoder solve the task trivially
-    # (aux loss -> 0 by upd 6, killing the representation-shaping signal for
-    # the remaining 91 updates). K>1 forces actual forward dynamics.
-    oca_horizon_steps: int  = 4
+    # frame_skip=4 and ~33ms/game frame, K=N -> predict ~132N ms ahead.
+    # Empirical findings:
+    #   K=1: encoder solves trivially in 6 updates (aux→0), no signal for the rest
+    #   K=4: still solved fast (aux→0.0002 by upd 6), only marginally harder.
+    #        The 4-frame stack input means the encoder can extrapolate linear
+    #        motion 4 steps ahead with no genuine dynamics learning.
+    #   K=8: ~1.06s ahead — bouncing trajectories curve significantly, opponent
+    #        AI has time to react and change direction. This is the regime where
+    #        next-pose prediction stops being trivial.
+    oca_horizon_steps: int  = 8
 
     # DPR decoder: transposed convs to reconstruct an 84x84 grayscale frame
     dpr_decoder_in_channels: int = 64
