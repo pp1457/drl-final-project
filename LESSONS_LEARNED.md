@@ -171,6 +171,32 @@ In default-difficulty Quick Game mode, the NO_PRESS-forever policy already score
 - **Evening:** distributed deploy across ws1–ws8 + ws10. First 9-run matrix launched at 19:38. Cron-based monitoring set up at 19:57. Multiple watchdog kills required N=3 fallback and ws-specific relaunches.
 - **Late evening:** analyzed first training results — discovered OCA-too-easy and full_rgb pickle tax. Fixed both. Restarted matrix at 21:06 with 4 fixes applied.
 
+### Day 1 — check #9 (23:40), early but striking reversal
+
+Restart with ent_coef=0.05 produced dramatically different early results at upd ~14/130:
+
+```
+Config     Returns (3 seeds)     Mean    Comparison
+baseline   0.33, 0.33, 0.00      0.220   ↓ from 0.89 in old run
+OCA        1.00, 0.67, 0.33      0.667   ↑ from 0.56
+DPR        1.00, 0.67, 0.33      0.667   ↑ from 0.28
+```
+
+**OCA and DPR are now clearly ahead of baseline.** This matches the proposal's hypothesis: aux representation shaping + adequate exploration → faster policy improvement than baseline PPO.
+
+But note caveats:
+- Sample size is 1-3 episodes per seed. Need to hit upd ~30+ for real signal.
+- Both OCA and DPR show identical 0.667 means right now — too coincidental to be trustworthy. Likely noise.
+- The big finding here is that ent_coef=0.05 prevented the policy collapse we saw last run.
+
+**Lower-bound on entropy** (vs upd 15 of the old run):
+```
+Old run (ent_coef=0.01): ws5 oca at 0.475, ws4 oca at 0.564 — already collapsing
+New run (ent_coef=0.05): ws5 oca at 0.595, ws4 oca at 0.606 — still exploring
+```
+
+The 5x entropy bonus is keeping the policy from committing prematurely, which gives the aux features time to actually pay off in better action selection.
+
 ### Day 1 — check #8 (23:12) — RESTART decision
 
 By upd ~55/130 (~42% through fast runs), the trend was unmistakable:
