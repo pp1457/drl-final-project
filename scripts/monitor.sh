@@ -6,7 +6,9 @@
 #   ./scripts/monitor.sh             # one snapshot
 #   ./scripts/monitor.sh -w          # auto-refresh every 30s (watch mode)
 #   ./scripts/monitor.sh -t <file>   # tail a specific run's log
-set -euo pipefail
+#
+# Robustness over strict errors: a missing field shouldn't kill the table.
+set -u
 
 LOG_NFS="$HOME/drl_logs"
 
@@ -36,8 +38,10 @@ show() {
     if grep -q "FINISHED" "$log" 2>/dev/null; then
       status="finished"
     elif [ -z "$last_upd" ]; then
-      # No PPO updates yet -- still booting / running into errors
-      if grep -qiE "traceback|error|fail" "$log" 2>/dev/null; then
+      # No PPO updates yet -- still booting / running into errors.
+      # Use a tight pattern that avoids matching benign "round-off errors" /
+      # "TensorFlow ... errors" noise the libs print during import.
+      if grep -qE '^(Traceback|.*Error: |.*Exception: )' "$log" 2>/dev/null; then
         status="ERROR"
       else
         status="setup..."
