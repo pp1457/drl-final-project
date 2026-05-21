@@ -60,9 +60,16 @@ def _largest_blobs_in_court(
     mask: np.ndarray, k: int, min_area: int, max_area: int
 ) -> list[tuple[float, float, float]]:
     """Return the k largest blobs in (cx, cy, area), filtered to the court area
-    (excluding scoreboard and rim regions where false positives cluster)."""
+    (excluding scoreboard and rim regions where false positives cluster).
+
+    Uses VISION.exclusion_zones — a list of (x_min, x_max, y_min, y_max)
+    rectangles. Any blob centroid inside any rectangle is dropped. The y filter
+    [COURT_Y_LO, COURT_Y_HI] is still applied as a global bound to drop
+    completely-off-court detections (e.g. crowd in upper bleachers).
+    """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     blobs: list[tuple[float, float, float]] = []
+    zones = VISION.exclusion_zones
     for c in contours:
         area = cv2.contourArea(c)
         if area < min_area or area > max_area:
@@ -74,9 +81,12 @@ def _largest_blobs_in_court(
         cy = m["m01"] / m["m00"]
         if not (COURT_Y_LO <= cy <= COURT_Y_HI):
             continue
-        if LEFT_RIM_X[0] <= cx <= LEFT_RIM_X[1]:
-            continue
-        if RIGHT_RIM_X[0] <= cx <= RIGHT_RIM_X[1]:
+        in_zone = False
+        for (zx0, zx1, zy0, zy1) in zones:
+            if zx0 <= cx <= zx1 and zy0 <= cy <= zy1:
+                in_zone = True
+                break
+        if in_zone:
             continue
         blobs.append((cx, cy, area))
     blobs.sort(key=lambda b: -b[2])

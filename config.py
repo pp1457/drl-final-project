@@ -38,37 +38,54 @@ class VisionConfig:
     changes by sampling pixels from new frames in a notebook.
     """
     # HSV ranges: (h_min, s_min, v_min) .. (h_max, s_max, v_max)
+    # Calibrated 2026-05-22 against RGB-pipeline frames from the live emulator.
+    # CHI red jersey: pixel samples gave (H≈4, S≈194, V≈233). V_max was 220 (too
+    # restrictive) → extended to 255.
+    # HOU white jersey: pixel samples gave (H≈0, S≈1, V≈220). V_min was 230 →
+    # lowered to 200 so off-white shading on the jerseys is caught.
     ball_hsv_lo:      tuple[int, int, int] = (8,   200, 180)
     ball_hsv_hi:      tuple[int, int, int] = (22,  255, 255)
     chi_red_hsv_lo:   tuple[int, int, int] = (0,   180, 100)
-    chi_red_hsv_hi:   tuple[int, int, int] = (8,   255, 220)
-    hou_white_hsv_lo: tuple[int, int, int] = (0,   0,   230)
-    hou_white_hsv_hi: tuple[int, int, int] = (180, 30,  255)
+    chi_red_hsv_hi:   tuple[int, int, int] = (8,   255, 255)
+    hou_white_hsv_lo: tuple[int, int, int] = (0,   0,   200)
+    hou_white_hsv_hi: tuple[int, int, int] = (180, 40,  255)
 
     # Spatial filter (native landscape coords on 2340x1080 frame).
-    # Anything outside [court_y_lo, court_y_hi] is filtered out as scoreboard /
-    # below-floor area.
-    # IMPORTANT: court_y_lo bumped 200 -> 410 because the scoreboard's
-    # 'CHI/HOU' text labels and basketball icon sit at y~268..360 and were
-    # being detected as players/ball (false positives that polluted OCA
-    # targets across all training runs of Day 1).
+    # Two-stage filter, applied to each blob centroid:
+    #   1. Must be inside the court rectangle [court_y_lo, court_y_hi]
+    #   2. Must NOT be inside any of the exclusion zones (scoreboard, rims)
+    # The scoreboard exclusion is a rectangle, NOT just a y-strip, so we keep
+    # detecting mid-air players at low y (jumping for dunks) as long as they're
+    # outside the scoreboard's x range.
+    # court_y_lo=410: the upper screen is dense with UI elements (CHI/HOU team
+    # rosters in the two upper corners at y~378, basketball icon at y~310,
+    # 'HOME'/'ROAD' labels around y~375) that mimic player colors at small
+    # blob sizes. Even mid-air players' CENTROIDS stay around y~500 (feet at
+    # 620, head at 380 during peak jump, midpoint ~500), so y_lo=410 is safe.
     court_y_lo: int = 410
     court_y_hi: int = 830
-    # The basketball rims are saturated orange/red and produce false-positive
-    # blobs. Exclude these x-bands from detection.
-    left_rim_x:  tuple[int, int] = (80,   280)
-    right_rim_x: tuple[int, int] = (2050, 2240)
-    # Central scoreboard exclusion zone (x range applies for y < court_y_lo
-    # only via the y filter above; documented here for future spatial-mask
-    # extensions).
-    scoreboard_x: tuple[int, int] = (900, 1450)
+    # Rectangular exclusions: any blob centroid inside any of these is dropped.
+    # (x_min, x_max, y_min, y_max)
+    exclusion_zones: tuple[tuple[int, int, int, int], ...] = (
+        (900,  1450, 0,   400),    # central scoreboard (CHI/HOU labels + digits)
+        (80,   280,  0,   400),    # left basketball rim+net
+        (2050, 2240, 0,   400),    # right basketball rim+net
+    )
+    # Kept for backward compatibility with existing code references.
+    left_rim_x:       tuple[int, int] = (80,   280)
+    right_rim_x:      tuple[int, int] = (2050, 2240)
+    scoreboard_x:     tuple[int, int] = (900, 1450)
     scoreboard_y_max: int = 400
 
     # Blob area bounds, in pixels at native 2340x1080.
+    # Calibrated 2026-05-22: a single jersey blob measured ~5000 px in a Q4
+    # gameplay frame. Court floor's red/orange wood is ~60000 px when caught.
+    # Tightened so the floor blob (way too large) is excluded but real jerseys
+    # (up to ~8000) are caught.
     player_blob_min: int = 400
-    player_blob_max: int = 3500
+    player_blob_max: int = 8000
     ball_blob_min:   int = 50
-    ball_blob_max:   int = 800
+    ball_blob_max:   int = 1200
 
 
 VISION = VisionConfig()
