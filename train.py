@@ -75,7 +75,7 @@ from config import PPO, MODEL
 @dataclass
 class Args:
     env_id: str = "fake"               # 'fake' | 'bouncy' | 'clone'
-    backend: str = "adb"               # 'adb' | 'adb-minitouch' | 'minicap' (only used for env_id=bouncy)
+    backend: str = "adb"               # 'adb' | 'adb-motionevent' | 'adb-minitouch' | 'minicap'
     frame_skip: int = 0                # 0 -> use config default (ACTIONS.frame_skip); >0 overrides
     aux_mode: str = "baseline"         # 'baseline' | 'oca' | 'dpr'
     aux_coef: float = PPO.aux_coef
@@ -146,6 +146,10 @@ def _make_bouncy_env(rank: int, backend_name: str = "adb", frame_skip: int = 0) 
     elif backend_name == "adb-minitouch":
         from adb_backend import AdbMinitouchBackend
         backend = AdbMinitouchBackend(endpoints[rank])
+        backend.setup()
+    elif backend_name == "adb-motionevent":
+        from adb_backend import AdbMotionEventBackend
+        backend = AdbMotionEventBackend(endpoints[rank])
         backend.setup()
     else:
         from adb_backend import AdbBackend

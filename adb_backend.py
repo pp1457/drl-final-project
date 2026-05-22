@@ -183,6 +183,85 @@ class AdbBackend(EmulatorBackend):
 _MINITOUCH_REMOTE = "/data/local/tmp/minitouch"
 
 
+class AdbMotionEventBackend(AdbBackend):
+    """State-based touch via stock `adb shell input motionevent <DOWN|UP> x y`.
+
+    Background: we tried minitouch (kernel-level event injection via
+    /dev/input/eventX) and STFService.MinitouchAgent (InputManager-based) but
+    both failed on the Pixel 5 x86_64 AVD — minitouch's auto-detected device
+    routes to a virtual display per its IDC config, and STF's injectInputEvent
+    on shell:s0 doesn't reach the game window for reasons we couldn't unblock
+    in one evening.
+
+    `adb shell input motionevent` is the stock Android cmd-line tool that
+    invokes InputManager.injectInputEvent via /system/bin/input — confirmed
+    to actually reach the focused game window (we tested: DOWN at landscape
+    (1170, 793) advanced the END-OF-Q1 stats screen to Q2 gameplay).
+
+    Trade-off vs minitouch:
+      + actually works
+      + no extra on-device binaries / setup
+      + DOWN and UP can be on independent shell calls → variable-duration
+        hold falls naturally out of the agent's PRESS/NO_PRESS state machine
+      - ~60-70 ms per adb-shell-input round trip vs minitouch's ~1 ms socket
+        write. On transition steps (PRESS↔NO_PRESS), that's the cost.
+        Continuation steps (PRESS→PRESS, NO_PRESS→NO_PRESS) send nothing.
+        Average ~10-20 ms added per step (assuming ~15% transition rate),
+        vastly better than AdbBackend's mandatory 132 ms swipe-hold.
+
+    No setup() needed beyond AdbBackend's default — uses adb cmds directly.
+    """
+
+    def __init__(self, endpoint: EmulatorEndpoint):
+        super().__init__(endpoint)
+        # Track whether a touch is currently held down, so we only emit
+        # DOWN on the leading edge and UP on the trailing edge.
+        self._motion_pressing = False
+
+    def setup(self) -> None:
+        """No-op — adb cmds work directly, no on-device daemon needed.
+        Provided so call sites that expect setup() (e.g. AdbMinitouchBackend
+        path) work uniformly."""
+        pass
+
+    def teardown(self) -> None:
+        # If a touch is still held when the env tears down, release it so we
+        # don't leak phantom presses across env recreations.
+        if self._motion_pressing:
+            try:
+                self._send_motion("UP")
+            except Exception:
+                pass
+            self._motion_pressing = False
+
+    def _send_motion(self, kind: str) -> None:
+        """Issue `input motionevent <DOWN|UP> x y` at PRESS_COORD."""
+        x, y = PRESS_COORD
+        _adb(
+            self.endpoint.adb_serial, "shell",
+            f"input motionevent {kind} {x} {y}",
+            timeout=5.0,
+        )
+
+    def send_action(self, action: int, hold_ms: int = PRESS_FRAME_MS) -> None:
+        """State-based touch via input motionevent.
+
+        On PRESS-transition: send DOWN, mark pressing. On NO_PRESS-transition:
+        send UP, mark not pressing. On continuation (same as previous state):
+        send nothing — touch state carries over. Always sleep hold_ms so the
+        game advances `frame_skip * 33ms` of game time per agent step
+        regardless of what we sent.
+        """
+        if action == PRESS and not self._motion_pressing:
+            self._send_motion("DOWN")
+            self._motion_pressing = True
+        elif action == NO_PRESS and self._motion_pressing:
+            self._send_motion("UP")
+            self._motion_pressing = False
+        if hold_ms > 0:
+            time.sleep(hold_ms / 1000.0)
+
+
 class AdbMinitouchBackend(AdbBackend):
     """Frames via adb screencap (slow but unrestricted by Android 12's
     SurfaceFlinger lockdown). Actions via minitouch — a state-based touch
