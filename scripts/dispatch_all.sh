@@ -7,12 +7,15 @@
 # Prereq: ./scripts/deploy_one.sh wsN must have been run for each target ws.
 #
 # Usage:
-#   ./scripts/dispatch_all.sh              # default 50000 steps
-#   ./scripts/dispatch_all.sh 100000       # 100k steps per run
+#   ./scripts/dispatch_all.sh                                # default 50k steps, adb, frame_skip=4 (v1)
+#   ./scripts/dispatch_all.sh 100000                         # 100k steps per run
+#   ./scripts/dispatch_all.sh 50000 2 minicap 1              # v2 matrix: minicap backend, frame_skip=1
 set -euo pipefail
 
 STEPS="${1:-50000}"
 N_ENVS="${2:-2}"   # N=2 after fixed-vision pipeline started tripping watchdog at N=3 (full HSV masks cost real CPU vs. broken-mask fast path)
+BACKEND="${3:-adb}"     # adb | minicap
+FRAME_SKIP="${4:-0}"    # 0 = use config.ACTIONS.frame_skip (4); set >0 to override per run
 PROJ="/tmp2/$USER/DRL_final_project"
 
 # (mode, seed) -> ws assignment. ws9 was down at deploy time; the 9th run
@@ -38,7 +41,7 @@ for assignment in "${ASSIGNMENTS[@]}"; do
   # as the remote shell forks the launcher (otherwise sshd keeps the channel
   # open waiting for the background process's stdout to close, which never
   # happens until training finishes -> the dispatch script hangs forever).
-  ssh -n "$HOST" "cd $PROJ && nohup ./scripts/launch_on_ws.sh $MODE $SEED $STEPS $N_ENVS \
+  ssh -n "$HOST" "cd $PROJ && nohup ./scripts/launch_on_ws.sh $MODE $SEED $STEPS $N_ENVS $BACKEND $FRAME_SKIP \
       > /tmp/launch_${MODE}_${SEED}.log 2>&1 < /dev/null & disown" &
 done
 

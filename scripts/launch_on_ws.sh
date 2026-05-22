@@ -9,10 +9,12 @@
 #   ./scripts/launch_on_ws.sh oca 0 50000 4
 set -euo pipefail
 
-MODE="${1:?usage: launch_on_ws.sh <mode> <seed> [steps] [num_envs]}"
+MODE="${1:?usage: launch_on_ws.sh <mode> <seed> [steps] [num_envs] [backend] [frame_skip]}"
 SEED="${2:?missing seed}"
 STEPS="${3:-50000}"
 N_ENVS="${4:-4}"
+BACKEND="${5:-adb}"
+FRAME_SKIP="${6:-0}"
 
 PROJ="/tmp2/$USER/DRL_final_project"
 LOG_NFS="$HOME/drl_logs"
@@ -40,6 +42,11 @@ EMU_LAUNCH_STAGGER_S=8 .venv/bin/python orchestrate.py launch --n "$N_ENVS" \
 echo "[launch_on_ws] emulator farm up" >> "$LOG"
 adb devices >> "$LOG" 2>&1
 
+# v2 path: push minicap/minitouch binaries to every emulator before training.
+if [ "$BACKEND" = "minicap" ]; then
+  ./scripts/push_minicap.sh >> "$LOG" 2>&1
+fi
+
 # Run training (blocking).
 # `-u` = unbuffered stdout/stderr so PPO updates flush to the log on every print,
 # not when a ~4KB buffer fills (which would delay the first visible update by
@@ -48,6 +55,7 @@ adb devices >> "$LOG" 2>&1
   --seed "$SEED" --total-timesteps "$STEPS" --num-envs "$N_ENVS" \
   --num-steps 128 --num-minibatches 4 --update-epochs 4 \
   --ckpt-every 25 \
+  --backend "$BACKEND" --frame-skip "$FRAME_SKIP" \
   >> "$LOG" 2>&1
 
 RC=$?

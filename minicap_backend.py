@@ -75,8 +75,15 @@ _DISPLAY_H = 2340
 _CAPTURE_W = 540   # half native; downsample on-device to save bandwidth
 _CAPTURE_H = 1170
 
-# Orientation: 1 = landscape (matches our AVD's mCurrentOrientation=1).
-_CAPTURE_ORIENTATION = 1
+# Rotation in degrees (the DeviceFarmer build accepts {0, 90, 180, 270} in the
+# -P arg's last slot). The legacy openstf minicap used 0..3 orientation indices;
+# our cloned x86_64 build (built 2019-09, NDK r15c) expects degrees.
+# 0 = portrait (native AVD orientation), 90 = landscape rotated left.
+# We use 0 because Bouncy Basketball renders in landscape *via its own
+# orientation lock* — capturing the unrotated framebuffer + letting the game's
+# in-display rotation appear in the captured pixels matches what `adb screencap`
+# returned in v1.
+_CAPTURE_ROTATION_DEG = 0
 
 
 def _adb_args(serial: str, *args: str) -> list[str]:
@@ -160,8 +167,8 @@ class MinicapMinitouchBackend(EmulatorBackend):
     # Minicap (frame stream)
     # ------------------------------------------------------------------
     def _start_minicap(self) -> None:
-        # Project arg format: <real_w>x<real_h>@<virt_w>x<virt_h>/<orientation>
-        proj = f"{_DISPLAY_W}x{_DISPLAY_H}@{_CAPTURE_W}x{_CAPTURE_H}/{_CAPTURE_ORIENTATION}"
+        # Project arg format: <real_w>x<real_h>@<virt_w>x<virt_h>/<rotation_deg>
+        proj = f"{_DISPLAY_W}x{_DISPLAY_H}@{_CAPTURE_W}x{_CAPTURE_H}/{_CAPTURE_ROTATION_DEG}"
         local_port = 1313 + (int(self.endpoint.adb_serial.split("-")[1]) - ACTIONS.press_coord[0])  # unique-ish
         local_port = 19000 + int(self.endpoint.adb_serial.split("-")[1]) % 1000
         _adb(self.endpoint.adb_serial, "forward", f"tcp:{local_port}", "localabstract:minicap")
