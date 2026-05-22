@@ -130,11 +130,20 @@ class AdbBackend(EmulatorBackend):
         return m.group(1) if m else ""
 
     def launch_app(self, package: str) -> None:
-        """Bring the given package's launcher activity to the foreground."""
+        """Bring the given package's launcher activity to the foreground.
+
+        Uses `am start -n` instead of `monkey -p ... LAUNCHER 1` because monkey
+        on Android 12 can briefly grab the input subsystem (it's a touch
+        fuzzer in its other modes), which knocks an already-running minitouch
+        off /dev/input/event10. `am start` is a pure activity-manager call
+        with no input-system side effects.
+        """
+        # Bouncy Basketball is a Unity game; its main activity is universally
+        # com.unity3d.player.UnityPlayerActivity for all Unity 2017+ builds.
+        activity = f"{package}/com.unity3d.player.UnityPlayerActivity"
         _adb(
             self.endpoint.adb_serial, "shell",
-            "monkey", "-p", package,
-            "-c", "android.intent.category.LAUNCHER", "1",
+            f"am start -n {activity}",
             timeout=15.0,
         )
 
@@ -304,18 +313,39 @@ class AdbMinitouchBackend(AdbBackend):
         my = int(py * self._mt_max_y / self._DISPLAY_H)
         return mx, my
 
-    def send_action(self, action: int, hold_ms: int = PRESS_FRAME_MS) -> None:
-        """State-based touch: send DOWN on press-state transition, UP on
-        release-transition, nothing on continuation."""
+    def _send_minitouch(self, payload: bytes) -> None:
+        """Send `payload` over the minitouch socket, with one reconnect retry
+        on BrokenPipeError. Minitouch's socket can drop unexpectedly (e.g.
+        after the game's first orientation change loses its input handle and
+        re-acquires it). One reconnect typically recovers."""
         sock = self._minitouch_sock
         if sock is None:
             raise RuntimeError("AdbMinitouchBackend not initialized; call setup() first")
+        try:
+            sock.sendall(payload)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            # Reconnect: kill any orphan + restart minitouch + reconnect socket.
+            try:
+                sock.close()
+            except OSError:
+                pass
+            self._minitouch_sock = None
+            self._mt_pressing = False  # device state reset on reconnect
+            self.setup()
+            assert self._minitouch_sock is not None
+            self._minitouch_sock.sendall(payload)
+
+    def send_action(self, action: int, hold_ms: int = PRESS_FRAME_MS) -> None:
+        """State-based touch: send DOWN on press-state transition, UP on
+        release-transition, nothing on continuation."""
+        if self._minitouch_sock is None:
+            raise RuntimeError("AdbMinitouchBackend not initialized; call setup() first")
         if action == PRESS and not self._mt_pressing:
             mx, my = self._to_mt_coords(*PRESS_COORD)
-            sock.sendall(f"d 0 {mx} {my} 50\nc\n".encode("ascii"))
+            self._send_minitouch(f"d 0 {mx} {my} 50\nc\n".encode("ascii"))
             self._mt_pressing = True
         elif action == NO_PRESS and self._mt_pressing:
-            sock.sendall(b"u 0\nc\n")
+            self._send_minitouch(b"u 0\nc\n")
             self._mt_pressing = False
         # Brief sleep so the game can actually process hold_ms of game time
         # in the current touch state before we next observe / decide.
@@ -326,12 +356,11 @@ class AdbMinitouchBackend(AdbBackend):
         """One-shot UI tap. Use minitouch (faster) when the socket is alive,
         fall back to plain `adb shell input tap` if minitouch isn't set up
         yet (matters during env.reset() before setup() has run)."""
-        sock = self._minitouch_sock
-        if sock is None:
+        if self._minitouch_sock is None:
             super().send_tap(x, y)
             return
         mx, my = self._to_mt_coords(x, y)
-        sock.sendall(f"d 0 {mx} {my} 50\nc\nu 0\nc\n".encode("ascii"))
+        self._send_minitouch(f"d 0 {mx} {my} 50\nc\nu 0\nc\n".encode("ascii"))
 
     def restart(self) -> None:
         # Tear down minitouch socket before adb emu kill so we don't get
