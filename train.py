@@ -402,45 +402,96 @@ def main():
     def _recover_envs(reason: str):
         """Hard-restart the vec env after a step/reset failure.
 
-        Kills every emulator outright (we don't try to distinguish between
-        "emulator dead", "adb daemon alive but shell wedged", and "game
-        backgrounded" — diagnosing those takes more adb calls that may also
-        wedge), then lets supervise_once relaunch each from the boot snapshot,
-        then close + remake the SyncVectorEnv.
+        Designed to NEVER raise — every step is wrapped in a try/except. On
+        failure to bring envs back up, returns a zero-tensor obs so the
+        outer loop can increment consecutive_failures and (eventually) bail
+        cleanly via the kill-switch at consecutive_failures >= N.
+
+        Recovery sequence:
+          1. Print the reason + traceback.
+          2. For each endpoint: `adb emu kill` (fire-and-forget).
+          3. WAIT for each endpoint to leave the adb device list — the kill
+             is async, so checking too fast lets supervise_once see "device"
+             and skip relaunch. This was the bug that crashed ws3 + ws4 the
+             first time around.
+          4. For each endpoint: directly call `_launch_emulator` +
+             `_wait_boot` (bypass supervise_once's flaky alive-check entirely
+             — we KNOW the emulator should be dead by now).
+          5. close + remake SyncVectorEnv.
+          6. envs.reset() (and tolerate failure here too — return zeros if so).
         """
         nonlocal envs
-        import traceback, subprocess
+        import traceback, subprocess, time as _time
         print(f"!! recovering envs: {reason}", flush=True)
-        traceback.print_exc()
-        if args.env_id == "bouncy":
-            try:
-                from orchestrate import load_endpoints, supervise_once
-                endpoints = load_endpoints()
-                # Step 1: kill every emulator (adb emu kill is fire-and-forget).
-                for ep in endpoints:
-                    try:
-                        subprocess.run(
-                            ["adb", "-s", ep.adb_serial, "emu", "kill"],
-                            capture_output=True, timeout=5.0,
-                        )
-                    except Exception as e:
-                        print(f"   emu kill({ep.adb_serial}) failed: {e!r}", flush=True)
-                # Step 2: supervise_once sees them dead and relaunches.
-                for ep in endpoints:
-                    try:
-                        if supervise_once(ep):
-                            print(f"   relaunched {ep.adb_serial}", flush=True)
-                    except Exception as e:
-                        print(f"   supervise_once({ep.adb_serial}) failed: {e!r}", flush=True)
-            except Exception as e:
-                print(f"   load_endpoints failed: {e!r}", flush=True)
         try:
-            envs.close()
+            traceback.print_exc()
         except Exception:
             pass
+
+        # --- helper that absolutely cannot raise --------------------------
+        def _safe(label, fn):
+            try:
+                return fn()
+            except Exception as e:
+                print(f"   recovery: {label} failed: {e!r}", flush=True)
+                return None
+
+        if args.env_id == "bouncy":
+            endpoints = _safe("load_endpoints", lambda: __import__('orchestrate').load_endpoints()) or []
+            # Step 1: kill every emulator (async).
+            for ep in endpoints:
+                _safe(
+                    f"emu kill {ep.adb_serial}",
+                    lambda ep=ep: subprocess.run(
+                        ["adb", "-s", ep.adb_serial, "emu", "kill"],
+                        capture_output=True, timeout=5.0,
+                    ),
+                )
+            # Step 2: wait for each emulator to leave the adb device list.
+            for ep in endpoints:
+                deadline = _time.time() + 20.0
+                while _time.time() < deadline:
+                    r = subprocess.run(
+                        ["adb", "-s", ep.adb_serial, "get-state"],
+                        capture_output=True, timeout=3.0,
+                    )
+                    if r.stdout.strip() != b"device":
+                        break
+                    _time.sleep(0.5)
+                else:
+                    print(f"   recovery: {ep.adb_serial} still 'device' after kill — proceeding anyway", flush=True)
+            # Step 3: relaunch each emulator directly (don't trust
+            # supervise_once's alive-check after the kill).
+            try:
+                from orchestrate import _launch_emulator, _wait_boot, BASE_PORT, EMU
+                snapshot = EMU.default_boot_snapshot
+            except Exception as e:
+                print(f"   recovery: orchestrate import failed: {e!r}", flush=True)
+                _launch_emulator = None
+            if _launch_emulator is not None:
+                for ep in endpoints:
+                    rank = (int(ep.adb_serial.split("-")[1]) - BASE_PORT) // 2
+                    _safe(
+                        f"relaunch {ep.adb_serial}",
+                        lambda rank=rank: _launch_emulator(rank=rank, read_only=True, snapshot=snapshot),
+                    )
+                for ep in endpoints:
+                    _safe(
+                        f"wait_boot {ep.adb_serial}",
+                        lambda ep=ep: _wait_boot(ep.adb_serial, timeout=180.0),
+                    )
+
+        # Step 4: remake the vec env.
+        _safe("envs.close", lambda: envs.close())
         envs = gym.vector.SyncVectorEnv(env_fns)
-        fresh, _ = envs.reset(seed=args.seed + update)
-        return to_chw(fresh)
+        fresh = _safe("envs.reset", lambda: envs.reset(seed=args.seed + update))
+        if fresh is None:
+            # Couldn't reset. Return zeros so the outer loop can record this
+            # as a consecutive failure and eventually bail. Never raise.
+            print(f"   recovery: returning zero obs as fallback", flush=True)
+            zeros = torch.zeros((args.num_envs,) + obs_shape, dtype=torch.uint8, device=device)
+            return zeros
+        return to_chw(fresh[0])
 
     consecutive_failures = 0
     for update in range(1, num_updates + 1):
