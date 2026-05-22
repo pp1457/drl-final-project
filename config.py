@@ -116,6 +116,12 @@ class RewardConfig:
     # red-bordered box containing both the "CHI" label and the score digits.
     chi_score_roi: tuple[int, int, int, int] = (260, 360, 970, 1120)
 
+    # HOU score ROI — mirror-symmetric to CHI across the scoreboard center
+    # (~x=960 on a 1920-wide frame). Verified visually on a Q3 gameplay frame
+    # where HOU "24" sits at roughly x∈[770,870], y∈[260,360]. The 800-950
+    # window has comfortable margin for 1-2 digit scores.
+    hou_score_roi: tuple[int, int, int, int] = (260, 360, 800, 950)
+
     # Tuned by inspection: clock-tick changes ~10-15 mean-abs-diff; a score
     # change is ~30-50. Threshold above the clock-tick floor.
     diff_threshold: float = 25.0
@@ -123,6 +129,11 @@ class RewardConfig:
     # After a score change is detected, suppress further detections for N
     # steps to avoid double-counting the multi-frame scoreboard animation.
     cooldown_steps: int = 8
+
+    # Multiplier for the HOU (opponent) score event. Default -1.0 makes a
+    # opponent basket cancel out one CHI basket; set to 0.0 for the
+    # "score-only" baseline reward used in the May 22 matrix.
+    opponent_score_weight: float = -1.0
 
 
 REWARD = RewardConfig()

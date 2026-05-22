@@ -75,6 +75,8 @@ from config import PPO, MODEL
 @dataclass
 class Args:
     env_id: str = "fake"               # 'fake' | 'bouncy' | 'clone'
+    backend: str = "adb"               # 'adb' | 'minicap' (only used for env_id=bouncy)
+    frame_skip: int = 0                # 0 -> use config default (ACTIONS.frame_skip); >0 overrides
     aux_mode: str = "baseline"         # 'baseline' | 'oca' | 'dpr'
     aux_coef: float = PPO.aux_coef
     seed: int = 0
@@ -117,11 +119,17 @@ def parse_args() -> Args:
 # ---------------------------------------------------------------
 # Env construction
 # ---------------------------------------------------------------
-def _make_bouncy_env(rank: int) -> gym.Env:
+def _make_bouncy_env(rank: int, backend_name: str = "adb", frame_skip: int = 0) -> gym.Env:
     """Real-emulator env. Reads endpoint allocations from the JSON written by
     `orchestrate.py launch --n N`. The trainer assumes the farm is already up
-    (run `python orchestrate.py launch --n <num_envs>` before `train.py`)."""
-    from adb_backend import AdbBackend
+    (run `python orchestrate.py launch --n <num_envs>` before `train.py`).
+
+    backend_name:
+      'adb'     - plain adb input swipe (atomic 132ms tap per PRESS).
+      'minicap' - minicap + minitouch (state-based touch, supports arbitrary
+                  hold durations via consecutive PRESS actions). Requires the
+                  on-device binaries pushed; see minicap_backend.py docstring.
+    """
     from orchestrate import load_endpoints
     from reward import ScoreboardDiffReward
 
@@ -130,14 +138,22 @@ def _make_bouncy_env(rank: int) -> gym.Env:
         raise RuntimeError(
             f"rank {rank} but only {len(endpoints)} endpoints; relaunch the farm with --n >= num_envs"
         )
-    backend = AdbBackend(endpoints[rank])
+    if backend_name == "minicap":
+        from minicap_backend import MinicapMinitouchBackend
+        backend = MinicapMinitouchBackend(endpoints[rank])
+        backend.setup()
+    else:
+        from adb_backend import AdbBackend
+        backend = AdbBackend(endpoints[rank])
     reward_extractor = ScoreboardDiffReward()
-    env = BouncyBasketballEnv(
-        backend=backend,
-        pose_extractor=detect_pose,
-        reward_extractor=reward_extractor,
-        # max_episode_steps: leave None → defaults to config.PPO.max_episode_steps
-    )
+    env_kwargs = {
+        "backend": backend,
+        "pose_extractor": detect_pose,
+        "reward_extractor": reward_extractor,
+    }
+    if frame_skip > 0:
+        env_kwargs["frame_skip"] = frame_skip
+    env = BouncyBasketballEnv(**env_kwargs)
     # Stash the reward extractor so reset() can reset its internal state.
     env._reward_state = reward_extractor  # type: ignore[attr-defined]
     return env
@@ -160,12 +176,12 @@ def _make_clone_env(rank: int) -> gym.Env:
     return BouncyBasketballCloneEnv(seed=rank)
 
 
-def make_env_fn(env_id: str, rank: int, frame_stack: int):
+def make_env_fn(env_id: str, rank: int, frame_stack: int, backend: str = "adb", frame_skip: int = 0):
     def thunk():
         if env_id == "fake":
             env = _make_fake_env(rank)
         elif env_id == "bouncy":
-            env = _make_bouncy_env(rank)
+            env = _make_bouncy_env(rank, backend_name=backend, frame_skip=frame_skip)
         elif env_id == "clone":
             env = _make_clone_env(rank)
         else:
@@ -336,7 +352,10 @@ def main():
     # - lets exceptions in env.step / env.reset bubble straight into the
     #   rollout loop where we can recover
     # At N_ENVS=2 with adb-bound latency, sequential vs parallel costs ~0.
-    env_fns = [make_env_fn(args.env_id, i, args.frame_stack) for i in range(args.num_envs)]
+    env_fns = [
+        make_env_fn(args.env_id, i, args.frame_stack, backend=args.backend, frame_skip=args.frame_skip)
+        for i in range(args.num_envs)
+    ]
     envs = gym.vector.SyncVectorEnv(env_fns)
     assert isinstance(envs.single_action_space, gym.spaces.Discrete)
     n_actions = int(envs.single_action_space.n)

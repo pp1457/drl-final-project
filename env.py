@@ -288,7 +288,11 @@ class BouncyBasketballEnv(gym.Env):
             self.backend.send_action(int(action))
         rgb = self.backend.grab_frame()
         score, episode_done = self.reward_extractor(rgb)
-        reward = float(max(0, score - self._raw_score))
+        # Per-step reward = delta of the cumulative net score. With the new
+        # ScoreboardDiffReward this can be negative (opponent scored). The
+        # old `max(0, ...)` truncation is gone — that was hiding the negative
+        # signal we now want PPO to learn from.
+        reward = float(score - self._raw_score)
         self._raw_score = score
         self._step_count += 1
         truncated = self._step_count >= self.max_episode_steps

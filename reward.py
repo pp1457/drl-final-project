@@ -113,8 +113,10 @@ def zero_extractor(_rgb: np.ndarray) -> tuple[int, bool]:
 from config import REWARD
 
 CHI_SCORE_ROI        = REWARD.chi_score_roi
+HOU_SCORE_ROI        = REWARD.hou_score_roi
 SCORE_DIFF_THRESHOLD = REWARD.diff_threshold
 SCORE_COOLDOWN_STEPS = REWARD.cooldown_steps
+OPPONENT_WEIGHT      = REWARD.opponent_score_weight
 
 
 # GAME OVER detection: the post-match screen has "GAME OVER" / "RED WINS!" /
@@ -149,50 +151,86 @@ def is_game_over(rgb_frame: np.ndarray) -> bool:
     return int(red.sum() // 255) > _GAME_OVER_PIXEL_THRESHOLD
 
 
-class ScoreboardDiffReward:
-    """Reward extractor that detects CHI score increments by pixel-diffing the
-    CHI score ROI between consecutive frames.
+class _ScoreboardRoiTracker:
+    """Detect score increments inside a single fixed scoreboard ROI by
+    pixel-diffing between consecutive frames. One instance per team."""
 
-    Pros over digit OCR:
-      - no digit templates needed
-      - works for arbitrary score values, including 2-digit numbers
-      - tolerant of small visual noise (jpeg-like artifacts)
-
-    Cons:
-      - false-positive risk: any visual change in the CHI box (label
-        re-renders, color flickers) triggers a reward; tuned threshold and
-        cooldown to minimize this
-      - cannot tell +1 vs +2 vs +3 point shots apart — every score event is
-        worth +1 here. Acceptable for our research because PPO learns from
-        the relative density of scoring events, not their exact point values.
-    """
-
-    def __init__(self, roi: tuple[int, int, int, int] = CHI_SCORE_ROI):
+    def __init__(self, roi: tuple[int, int, int, int]):
         self._roi = roi
         self._prev_patch: Optional[np.ndarray] = None
-        self._score = 0
         self._cooldown = 0
 
     def reset(self) -> None:
         self._prev_patch = None
-        self._score = 0
         self._cooldown = 0
 
-    def __call__(self, rgb_frame: np.ndarray) -> tuple[int, bool]:
+    def step(self, rgb_frame: np.ndarray) -> bool:
+        """Returns True iff this frame shows a score-event for this ROI."""
         y0, y1, x0, x1 = self._roi
         H, W = rgb_frame.shape[:2]
         if y1 > H or x1 > W:
-            return self._score, False
+            return False
         patch = rgb_frame[y0:y1, x0:x1].astype(np.int16)
         if self._cooldown > 0:
             self._cooldown -= 1
+        event = False
         if self._prev_patch is not None and self._cooldown == 0:
             diff = float(np.abs(patch - self._prev_patch).mean())
             if diff >= SCORE_DIFF_THRESHOLD:
-                self._score += 1
+                event = True
                 self._cooldown = SCORE_COOLDOWN_STEPS
         self._prev_patch = patch
-        # Detect GAME OVER -> signal episode done so env.reset() can fire
-        # the REMATCH tap and we don't keep stepping on a frozen frame.
+        return event
+
+
+class ScoreboardDiffReward:
+    """Reward extractor that detects scoring events by pixel-diffing two
+    scoreboard ROIs (CHI for the agent's team, HOU for the opponent).
+
+    Returns a net cumulative score where each CHI basket counts +1 and each
+    HOU basket counts `OPPONENT_WEIGHT` (default -1.0). The env's per-step
+    reward is the delta of this net score, so:
+      - CHI scores  → reward = +1.0 that step
+      - HOU scores  → reward = -1.0 that step
+      - otherwise   → reward =  0.0
+
+    For backward compatibility with the May 22 matrix, set
+    `REWARD.opponent_score_weight = 0.0` to recover the score-only behavior.
+
+    Pros over digit OCR:
+      - no digit templates needed; works for arbitrary score values
+      - tolerant of small visual noise
+    Cons:
+      - +1 vs +2 vs +3-point shots collapsed to one event each (PPO learns
+        from event density, not point value)
+      - false-positive risk on visual flickers; mitigated by cooldown
+    """
+
+    def __init__(
+        self,
+        chi_roi: tuple[int, int, int, int] = CHI_SCORE_ROI,
+        hou_roi: tuple[int, int, int, int] = HOU_SCORE_ROI,
+        opponent_weight: float = OPPONENT_WEIGHT,
+    ):
+        self._chi = _ScoreboardRoiTracker(chi_roi)
+        self._hou = _ScoreboardRoiTracker(hou_roi)
+        self._opponent_weight = float(opponent_weight)
+        self._net_score = 0.0
+
+    def reset(self) -> None:
+        self._chi.reset()
+        self._hou.reset()
+        self._net_score = 0.0
+
+    def __call__(self, rgb_frame: np.ndarray) -> tuple[float, bool]:
+        # GAME OVER reading first — its red text would otherwise trip the
+        # ROI diff. When GAME OVER is true we report no score change and let
+        # the env reset.
         done = is_game_over(rgb_frame)
-        return self._score, done
+        if done:
+            return self._net_score, True
+        if self._chi.step(rgb_frame):
+            self._net_score += 1.0
+        if self._hou.step(rgb_frame):
+            self._net_score += self._opponent_weight
+        return self._net_score, False
