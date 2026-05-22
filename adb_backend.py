@@ -205,10 +205,24 @@ class AdbMinitouchBackend(AdbBackend):
         # minicap_backend.py.
         port_suffix = int(self.endpoint.adb_serial.split("-")[1])
         local_port = 20000 + port_suffix % 1000
+        # Ensure adbd is running as root on this serial. minitouch needs root
+        # to open /dev/input/event* under Android 12's SELinux policy
+        # (shell:s0 is denied even though the shell uid is in the input
+        # group). Idempotent: 'adb root' on an already-root daemon prints
+        # "adbd is already running as root" and returns 0.
+        subprocess.run(
+            ["adb", "-s", self.endpoint.adb_serial, "root"],
+            capture_output=True, timeout=10.0,
+        )
+        # adb root restarts adbd; wait briefly then re-establish.
+        time.sleep(2.0)
+        subprocess.run(
+            ["adb", "-s", self.endpoint.adb_serial, "wait-for-device"],
+            capture_output=True, timeout=10.0,
+        )
         # Kill any leftover minitouch from a prior run, then fire & forget
         # via nohup so the on-device process survives our Python subprocess
-        # going away. Using subprocess.Popen kept the process tied to
-        # Python's signal mask, which closed the connection mid-test.
+        # going away.
         _adb(self.endpoint.adb_serial, "shell", "pkill -9 minitouch || true", timeout=5.0)
         time.sleep(0.3)
         _adb(self.endpoint.adb_serial, "forward", f"tcp:{local_port}", "localabstract:minitouch")

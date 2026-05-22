@@ -37,4 +37,22 @@ for serial in "${SERIALS[@]}"; do
   fi
 done
 
+# Restart each emulator's adbd as root so on-device processes minitouch
+# launches (via `adb shell nohup ... &`) inherit root context. Without root,
+# minitouch's open() on /dev/input/event* fails with EACCES under Android
+# 12's SELinux policy — the shell:s0 context isn't allowed access even
+# though the shell user is in the input UNIX group. `adb root` is per-device
+# on the google_apis AVDs; iterate per serial.
+echo "[push_minicap] adb root per-serial for SELinux access to /dev/input/*"
+for serial in "${SERIALS[@]}"; do
+  out=$(adb -s "$serial" root 2>&1)
+  echo "   $serial: $out"
+done
+sleep 2
+# Re-verify by checking 'id' shows uid=0
+for serial in "${SERIALS[@]}"; do
+  id_out=$(adb -s "$serial" shell id 2>&1 | head -1)
+  echo "   $serial id: $id_out"
+done
+
 echo "[push_minicap] done; ${#SERIALS[@]} emulator(s) prepared."
