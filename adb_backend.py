@@ -240,9 +240,18 @@ class AdbMinitouchBackend(AdbBackend):
         _adb(self.endpoint.adb_serial, "shell", "pkill -9 minitouch || true", timeout=5.0)
         time.sleep(0.3)
         _adb(self.endpoint.adb_serial, "forward", f"tcp:{local_port}", "localabstract:minitouch")
+        # CRITICAL: pin minitouch to /dev/input/event3 (= virtio_input_multi_touch_1).
+        # The Pixel 5 x86_64 AVD ships with ~12 virtio touch devices; minitouch's
+        # auto-detect picks "multi_touch_8" (event10), whose IDC config routes
+        # events to a *virtual* display (`touch.displayId =
+        # virtual:com.android.emulator.multidisplay:1234568`) — NOT the main
+        # display where the game is rendered. So taps went into the void.
+        # multi_touch_1 (event3) has no displayId override → routes to main.
+        # Verified by manual screen-tap test: tap at landscape (1170, 793)
+        # via event3 advanced END-OF-QUARTER stats → Q2 gameplay.
         subprocess.run(
             ["adb", "-s", self.endpoint.adb_serial, "shell",
-             "nohup /data/local/tmp/minitouch >/dev/null 2>&1 &"],
+             "nohup /data/local/tmp/minitouch -d /dev/input/event3 >/dev/null 2>&1 &"],
             capture_output=True, timeout=5.0,
         )
         # Connect — minitouch needs a moment to bind its abstract socket.
@@ -295,22 +304,20 @@ class AdbMinitouchBackend(AdbBackend):
             self._minitouch_proc.terminate()
             self._minitouch_proc = None
 
-    # Display dimensions on our AVD — used to convert PRESS_COORD (pixel space)
-    # into minitouch's virtual coord space (max_x, max_y reported in banner).
-    _DISPLAY_W = 2340  # landscape: width is the longer axis
-    _DISPLAY_H = 1080
+    # Landscape display dimensions. With minitouch pinned to event3
+    # (multi_touch_1, no displayId override → main display, orientationAware →
+    # auto-rotates events for current display orientation), minitouch's virtual
+    # (mx, my) in 32767x32767 space maps DIRECTLY to landscape pixels. No
+    # rotation needed. Verified by visual test: tap at landscape (1170, 793)
+    # via event3 advanced the END-OF-QUARTER stats → Q2 gameplay.
+    _LANDSCAPE_W = 2340
+    _LANDSCAPE_H = 1080
 
     def _to_mt_coords(self, px: int, py: int) -> tuple[int, int]:
-        """Convert pixel coords -> minitouch virtual coords using banner's
-        max_x / max_y. The AVD device is portrait-native 1080x2340; the game
-        renders rotated so screen pixels are reported by adb as 2340x1080 in
-        landscape. minitouch's coord system maps the *device's native portrait*
-        axes — so (pixel_x, pixel_y) -> (max_x * py / portrait_w, max_y * px / portrait_h)
-        when the game is in landscape mode."""
-        # Try direct mapping first (game forces landscape; minitouch should
-        # follow current orientation in DeviceFarmer's build):
-        mx = int(px * self._mt_max_x / self._DISPLAY_W)
-        my = int(py * self._mt_max_y / self._DISPLAY_H)
+        """Convert landscape pixel coords (matching adb screencap dims +
+        PRESS_COORD) to minitouch's virtual 32767x32767 space."""
+        mx = int(px * self._mt_max_x / self._LANDSCAPE_W)
+        my = int(py * self._mt_max_y / self._LANDSCAPE_H)
         return mx, my
 
     def _send_minitouch(self, payload: bytes) -> None:
