@@ -75,7 +75,7 @@ from config import PPO, MODEL
 @dataclass
 class Args:
     env_id: str = "fake"               # 'fake' | 'bouncy' | 'clone'
-    backend: str = "adb"               # 'adb' | 'minicap' (only used for env_id=bouncy)
+    backend: str = "adb"               # 'adb' | 'adb-minitouch' | 'minicap' (only used for env_id=bouncy)
     frame_skip: int = 0                # 0 -> use config default (ACTIONS.frame_skip); >0 overrides
     aux_mode: str = "baseline"         # 'baseline' | 'oca' | 'dpr'
     aux_coef: float = PPO.aux_coef
@@ -125,10 +125,11 @@ def _make_bouncy_env(rank: int, backend_name: str = "adb", frame_skip: int = 0) 
     (run `python orchestrate.py launch --n <num_envs>` before `train.py`).
 
     backend_name:
-      'adb'     - plain adb input swipe (atomic 132ms tap per PRESS).
-      'minicap' - minicap + minitouch (state-based touch, supports arbitrary
-                  hold durations via consecutive PRESS actions). Requires the
-                  on-device binaries pushed; see minicap_backend.py docstring.
+      'adb'           - plain adb input swipe (atomic 132ms tap per PRESS).
+      'adb-minitouch' - adb screencap for frames + minitouch for actions
+                        (state-based touch, persists across env steps).
+      'minicap'       - minicap + minitouch (broken on Android 12 right now;
+                        see scripts/minicap_binaries notes).
     """
     from orchestrate import load_endpoints
     from reward import ScoreboardDiffReward
@@ -141,6 +142,10 @@ def _make_bouncy_env(rank: int, backend_name: str = "adb", frame_skip: int = 0) 
     if backend_name == "minicap":
         from minicap_backend import MinicapMinitouchBackend
         backend = MinicapMinitouchBackend(endpoints[rank])
+        backend.setup()
+    elif backend_name == "adb-minitouch":
+        from adb_backend import AdbMinitouchBackend
+        backend = AdbMinitouchBackend(endpoints[rank])
         backend.setup()
     else:
         from adb_backend import AdbBackend

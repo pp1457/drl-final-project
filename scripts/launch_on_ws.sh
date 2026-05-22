@@ -43,7 +43,8 @@ echo "[launch_on_ws] emulator farm up" >> "$LOG"
 adb devices >> "$LOG" 2>&1
 
 # v2 path: push minicap/minitouch binaries to every emulator before training.
-if [ "$BACKEND" = "minicap" ]; then
+# Both 'minicap' and 'adb-minitouch' need at least minitouch on-device.
+if [ "$BACKEND" = "minicap" ] || [ "$BACKEND" = "adb-minitouch" ]; then
   ./scripts/push_minicap.sh >> "$LOG" 2>&1
 fi
 

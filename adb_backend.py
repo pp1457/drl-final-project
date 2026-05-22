@@ -167,3 +167,155 @@ class AdbBackend(EmulatorBackend):
             if not self.is_alive():
                 return
             time.sleep(0.5)
+
+
+# Module-level for the minitouch port allocation. Mirror what minicap_backend.py
+# uses so the two can coexist (different port ranges).
+_MINITOUCH_REMOTE = "/data/local/tmp/minitouch"
+
+
+class AdbMinitouchBackend(AdbBackend):
+    """Frames via adb screencap (slow but unrestricted by Android 12's
+    SurfaceFlinger lockdown). Actions via minitouch — a state-based touch
+    interface that lets a touch persist across env steps, so consecutive
+    PRESS actions accumulate into a *true* held press of arbitrary duration.
+
+    This is the v2-light backend: we couldn't get minicap working on
+    Android 12 (the API-21 binary dies silently against the post-API-29
+    SurfaceFlinger), but minitouch's input layer is unchanged and works
+    fine. So we keep adb screencap for frames and unlock the action-space
+    win for free.
+
+    Setup pushes happen via scripts/push_minicap.sh; this class assumes
+    /data/local/tmp/minitouch exists on the emulator.
+    """
+
+    def __init__(self, endpoint: EmulatorEndpoint):
+        super().__init__(endpoint)
+        import socket as _socket  # local to avoid polluting the AdbBackend path
+        self._socket_mod = _socket
+        self._minitouch_proc: Optional[subprocess.Popen] = None
+        self._minitouch_sock: Optional[_socket.socket] = None
+        # Reuse AdbBackend's _pressing? We override send_action so it's fine.
+        self._mt_pressing = False
+
+    def setup(self) -> None:
+        """Start minitouch on the device + connect to it via adb forward."""
+        # Local port per-serial: 20000 + (port_suffix % 1000) — same scheme as
+        # minicap_backend.py.
+        port_suffix = int(self.endpoint.adb_serial.split("-")[1])
+        local_port = 20000 + port_suffix % 1000
+        # Kill any leftover minitouch from a prior run, then fire & forget
+        # via nohup so the on-device process survives our Python subprocess
+        # going away. Using subprocess.Popen kept the process tied to
+        # Python's signal mask, which closed the connection mid-test.
+        _adb(self.endpoint.adb_serial, "shell", "pkill -9 minitouch || true", timeout=5.0)
+        time.sleep(0.3)
+        _adb(self.endpoint.adb_serial, "forward", f"tcp:{local_port}", "localabstract:minitouch")
+        subprocess.run(
+            ["adb", "-s", self.endpoint.adb_serial, "shell",
+             "nohup /data/local/tmp/minitouch >/dev/null 2>&1 &"],
+            capture_output=True, timeout=5.0,
+        )
+        # Connect — minitouch needs a moment to bind its abstract socket.
+        sock = self._socket_mod.socket(self._socket_mod.AF_INET, self._socket_mod.SOCK_STREAM)
+        last_err = None
+        for _ in range(50):  # up to ~5s
+            try:
+                sock.connect(("127.0.0.1", local_port))
+                break
+            except ConnectionRefusedError as e:
+                last_err = e
+                time.sleep(0.1)
+        else:
+            raise RuntimeError(f"failed to connect to minitouch on tcp:{local_port}: {last_err}")
+        # Read + parse the banner: "v 1\n^ <max_contacts> <max_x> <max_y> <max_p>\n$ <pid>\n"
+        # Critically, minitouch uses virtual 0..max_x/max_y coords, NOT screen
+        # pixels. Save the scale so send_action can convert PRESS_COORD from
+        # pixel space to minitouch's virtual space.
+        sock.settimeout(2.0)
+        banner = b""
+        try:
+            while b"$" not in banner:
+                chunk = sock.recv(256)
+                if not chunk:
+                    break
+                banner += chunk
+        except self._socket_mod.timeout:
+            pass
+        sock.settimeout(None)
+        self._minitouch_sock = sock
+        # Default scale = 1:1 (assume coords == pixels) if parsing fails.
+        self._mt_max_x = 32767
+        self._mt_max_y = 32767
+        for line in banner.decode("ascii", errors="ignore").splitlines():
+            if line.startswith("^"):
+                parts = line.split()
+                if len(parts) >= 5:
+                    self._mt_max_x = int(parts[2])
+                    self._mt_max_y = int(parts[3])
+                    break
+
+    def teardown(self) -> None:
+        if self._minitouch_sock is not None:
+            try:
+                self._minitouch_sock.close()
+            except OSError:
+                pass
+            self._minitouch_sock = None
+        if self._minitouch_proc is not None:
+            self._minitouch_proc.terminate()
+            self._minitouch_proc = None
+
+    # Display dimensions on our AVD — used to convert PRESS_COORD (pixel space)
+    # into minitouch's virtual coord space (max_x, max_y reported in banner).
+    _DISPLAY_W = 2340  # landscape: width is the longer axis
+    _DISPLAY_H = 1080
+
+    def _to_mt_coords(self, px: int, py: int) -> tuple[int, int]:
+        """Convert pixel coords -> minitouch virtual coords using banner's
+        max_x / max_y. The AVD device is portrait-native 1080x2340; the game
+        renders rotated so screen pixels are reported by adb as 2340x1080 in
+        landscape. minitouch's coord system maps the *device's native portrait*
+        axes — so (pixel_x, pixel_y) -> (max_x * py / portrait_w, max_y * px / portrait_h)
+        when the game is in landscape mode."""
+        # Try direct mapping first (game forces landscape; minitouch should
+        # follow current orientation in DeviceFarmer's build):
+        mx = int(px * self._mt_max_x / self._DISPLAY_W)
+        my = int(py * self._mt_max_y / self._DISPLAY_H)
+        return mx, my
+
+    def send_action(self, action: int, hold_ms: int = PRESS_FRAME_MS) -> None:
+        """State-based touch: send DOWN on press-state transition, UP on
+        release-transition, nothing on continuation."""
+        sock = self._minitouch_sock
+        if sock is None:
+            raise RuntimeError("AdbMinitouchBackend not initialized; call setup() first")
+        if action == PRESS and not self._mt_pressing:
+            mx, my = self._to_mt_coords(*PRESS_COORD)
+            sock.sendall(f"d 0 {mx} {my} 50\nc\n".encode("ascii"))
+            self._mt_pressing = True
+        elif action == NO_PRESS and self._mt_pressing:
+            sock.sendall(b"u 0\nc\n")
+            self._mt_pressing = False
+        # Brief sleep so the game can actually process hold_ms of game time
+        # in the current touch state before we next observe / decide.
+        if hold_ms > 0:
+            time.sleep(hold_ms / 1000.0)
+
+    def send_tap(self, x: int, y: int) -> None:
+        """One-shot UI tap. Use minitouch (faster) when the socket is alive,
+        fall back to plain `adb shell input tap` if minitouch isn't set up
+        yet (matters during env.reset() before setup() has run)."""
+        sock = self._minitouch_sock
+        if sock is None:
+            super().send_tap(x, y)
+            return
+        mx, my = self._to_mt_coords(x, y)
+        sock.sendall(f"d 0 {mx} {my} 50\nc\nu 0\nc\n".encode("ascii"))
+
+    def restart(self) -> None:
+        # Tear down minitouch socket before adb emu kill so we don't get
+        # a hung send on the next setup().
+        self.teardown()
+        super().restart()
