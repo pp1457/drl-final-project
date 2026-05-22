@@ -206,20 +206,25 @@ class AdbMinitouchBackend(AdbBackend):
         port_suffix = int(self.endpoint.adb_serial.split("-")[1])
         local_port = 20000 + port_suffix % 1000
         # Ensure adbd is running as root on this serial. minitouch needs root
-        # to open /dev/input/event* under Android 12's SELinux policy
-        # (shell:s0 is denied even though the shell uid is in the input
-        # group). Idempotent: 'adb root' on an already-root daemon prints
-        # "adbd is already running as root" and returns 0.
-        subprocess.run(
-            ["adb", "-s", self.endpoint.adb_serial, "root"],
-            capture_output=True, timeout=10.0,
-        )
-        # adb root restarts adbd; wait briefly then re-establish.
-        time.sleep(2.0)
-        subprocess.run(
-            ["adb", "-s", self.endpoint.adb_serial, "wait-for-device"],
-            capture_output=True, timeout=10.0,
-        )
+        # to open /dev/input/event* under Android 12's SELinux policy.
+        # CRITICAL: only call `adb root` if NOT already root — otherwise the
+        # second env's setup() restarts adbd a second time which kills the
+        # first env's already-established minitouch socket. (Earlier launch
+        # died with BrokenPipeError on every 2nd send_tap because of this.)
+        id_out = subprocess.run(
+            ["adb", "-s", self.endpoint.adb_serial, "shell", "id"],
+            capture_output=True, timeout=5.0,
+        ).stdout.decode("ascii", errors="ignore")
+        if "uid=0" not in id_out:
+            subprocess.run(
+                ["adb", "-s", self.endpoint.adb_serial, "root"],
+                capture_output=True, timeout=10.0,
+            )
+            time.sleep(2.0)
+            subprocess.run(
+                ["adb", "-s", self.endpoint.adb_serial, "wait-for-device"],
+                capture_output=True, timeout=10.0,
+            )
         # Kill any leftover minitouch from a prior run, then fire & forget
         # via nohup so the on-device process survives our Python subprocess
         # going away.
