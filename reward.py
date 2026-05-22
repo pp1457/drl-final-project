@@ -112,11 +112,19 @@ def zero_extractor(_rgb: np.ndarray) -> tuple[int, bool]:
 # All reward constants live in config.REWARD.
 from config import REWARD
 
+from config import VISION  # for vision_scale, shared with vision.py
+
 CHI_SCORE_ROI        = REWARD.chi_score_roi
 HOU_SCORE_ROI        = REWARD.hou_score_roi
 SCORE_DIFF_THRESHOLD = REWARD.diff_threshold
 SCORE_COOLDOWN_STEPS = REWARD.cooldown_steps
 OPPONENT_WEIGHT      = REWARD.opponent_score_weight
+
+
+def _scaled_roi(roi: tuple[int, int, int, int], scale: float) -> tuple[int, int, int, int]:
+    """Scale a (y0, y1, x0, x1) ROI by a linear factor."""
+    y0, y1, x0, x1 = roi
+    return (int(y0 * scale), int(y1 * scale), int(x0 * scale), int(x1 * scale))
 
 
 # GAME OVER detection: the post-match screen has "GAME OVER" / "RED WINS!" /
@@ -133,14 +141,20 @@ _GAME_OVER_Y_BAND   = (20, 130)
 _GAME_OVER_PIXEL_THRESHOLD = 1500
 
 
-def is_game_over(rgb_frame: np.ndarray) -> bool:
+def is_game_over(rgb_frame: np.ndarray, scale: Optional[float] = None) -> bool:
     """Return True if the frame looks like the post-match GAME OVER screen.
 
-    Input MUST be RGB (what EmulatorBackend.grab_frame() returns). Tested
-    against Day-1 stuck frames (GAME OVER → ~3600 red pixels) and clean
-    gameplay frames (~0 red pixels); separates cleanly via threshold 1500.
+    Input MUST be RGB. If `scale` is provided (or VISION.vision_scale != 1.0),
+    the y-band and pixel threshold are rescaled to match.
     """
+    if scale is None:
+        scale = VISION.vision_scale
     y0, y1 = _GAME_OVER_Y_BAND
+    threshold = _GAME_OVER_PIXEL_THRESHOLD
+    if scale != 1.0:
+        y0 = int(y0 * scale)
+        y1 = int(y1 * scale)
+        threshold = int(threshold * scale * scale)
     H, W = rgb_frame.shape[:2]
     if y1 > H:
         return False
@@ -148,7 +162,7 @@ def is_game_over(rgb_frame: np.ndarray) -> bool:
     red1 = cv2.inRange(hsv, np.array([0, 180, 100]), np.array([8, 255, 255]))
     red2 = cv2.inRange(hsv, np.array([170, 180, 100]), np.array([180, 255, 255]))
     red = cv2.bitwise_or(red1, red2)
-    return int(red.sum() // 255) > _GAME_OVER_PIXEL_THRESHOLD
+    return int(red.sum() // 255) > threshold
 
 
 class _ScoreboardRoiTracker:
@@ -211,9 +225,12 @@ class ScoreboardDiffReward:
         chi_roi: tuple[int, int, int, int] = CHI_SCORE_ROI,
         hou_roi: tuple[int, int, int, int] = HOU_SCORE_ROI,
         opponent_weight: float = OPPONENT_WEIGHT,
+        scale: Optional[float] = None,
     ):
-        self._chi = _ScoreboardRoiTracker(chi_roi)
-        self._hou = _ScoreboardRoiTracker(hou_roi)
+        s = VISION.vision_scale if scale is None else scale
+        self._scale = s
+        self._chi = _ScoreboardRoiTracker(_scaled_roi(chi_roi, s))
+        self._hou = _ScoreboardRoiTracker(_scaled_roi(hou_roi, s))
         self._opponent_weight = float(opponent_weight)
         self._net_score = 0.0
 
@@ -223,10 +240,20 @@ class ScoreboardDiffReward:
         self._net_score = 0.0
 
     def __call__(self, rgb_frame: np.ndarray) -> tuple[float, bool]:
+        # If we're operating at a downsampled scale, resize the frame to match
+        # the scaled ROIs. (We do this once here so detect_pose and reward
+        # both see a frame of the same size.)
+        if self._scale != 1.0:
+            h, w = rgb_frame.shape[:2]
+            rgb_frame = cv2.resize(
+                rgb_frame,
+                (int(w * self._scale), int(h * self._scale)),
+                interpolation=cv2.INTER_AREA,
+            )
         # GAME OVER reading first — its red text would otherwise trip the
         # ROI diff. When GAME OVER is true we report no score change and let
         # the env reset.
-        done = is_game_over(rgb_frame)
+        done = is_game_over(rgb_frame, scale=1.0)  # frame already at our scale
         if done:
             return self._net_score, True
         if self._chi.step(rgb_frame):

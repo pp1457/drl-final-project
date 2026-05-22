@@ -57,20 +57,53 @@ MIN_BALL_BLOB   = VISION.ball_blob_min
 MAX_BALL_BLOB   = VISION.ball_blob_max
 
 
+class _ScaledVision:
+    """Pre-scales every spatial constant in VISION by a uniform factor. Linear
+    constants scale by `scale`; area constants scale by `scale**2`. Constructed
+    once per detect_pose call when vision_scale != 1.0, then used in place of
+    module-level globals."""
+
+    def __init__(self, scale: float):
+        s = scale
+        s2 = s * s
+        self.scale = s
+        self.court_y_lo = int(VISION.court_y_lo * s)
+        self.court_y_hi = int(VISION.court_y_hi * s)
+        self.shoe_y_lo  = int(VISION.shoe_y_lo  * s)
+        self.shoe_y_hi  = int(VISION.shoe_y_hi  * s)
+        self.player_blob_min = int(VISION.player_blob_min * s2)
+        self.player_blob_max = int(VISION.player_blob_max * s2)
+        self.ball_blob_min   = int(VISION.ball_blob_min   * s2)
+        self.ball_blob_max   = int(VISION.ball_blob_max   * s2)
+        self.shoe_blob_min   = int(VISION.shoe_blob_min   * s2)
+        self.shoe_blob_max   = int(VISION.shoe_blob_max   * s2)
+        self.jersey_to_shoe_max_dy = int(VISION.jersey_to_shoe_max_dy * s)
+        self.exclusion_zones = tuple(
+            (int(zx0 * s), int(zx1 * s), int(zy0 * s), int(zy1 * s))
+            for (zx0, zx1, zy0, zy1) in VISION.exclusion_zones
+        )
+
+
+# A native-resolution sentinel. Defaults to VISION at scale=1.0 so existing
+# call sites (without a `cfg` arg) behave exactly as before.
+_NATIVE_VISION_PROXY = _ScaledVision(1.0)
+
+
 def _largest_blobs_in_court(
-    mask: np.ndarray, k: int, min_area: int, max_area: int
+    mask: np.ndarray, k: int, min_area: int, max_area: int, cfg=_NATIVE_VISION_PROXY
 ) -> list[tuple[float, float, float]]:
     """Return the k largest blobs in (cx, cy, area), filtered to the court area
     (excluding scoreboard and rim regions where false positives cluster).
 
-    Uses VISION.exclusion_zones — a list of (x_min, x_max, y_min, y_max)
-    rectangles. Any blob centroid inside any rectangle is dropped. The y filter
-    [COURT_Y_LO, COURT_Y_HI] is still applied as a global bound to drop
-    completely-off-court detections (e.g. crowd in upper bleachers).
+    `cfg` carries the spatial constants — either _NATIVE_VISION_PROXY (default,
+    unchanged behavior) or a _ScaledVision instance built for a downsampled
+    frame. Note `min_area`/`max_area` are still passed explicitly because
+    callers want to apply the right (ball vs player) bound.
     """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     blobs: list[tuple[float, float, float]] = []
-    zones = VISION.exclusion_zones
+    zones = cfg.exclusion_zones
+    court_y_lo, court_y_hi = cfg.court_y_lo, cfg.court_y_hi
     for c in contours:
         area = cv2.contourArea(c)
         if area < min_area or area > max_area:
@@ -80,7 +113,7 @@ def _largest_blobs_in_court(
             continue
         cx = m["m10"] / m["m00"]
         cy = m["m01"] / m["m00"]
-        if not (COURT_Y_LO <= cy <= COURT_Y_HI):
+        if not (court_y_lo <= cy <= court_y_hi):
             continue
         in_zone = False
         for (zx0, zx1, zy0, zy1) in zones:
@@ -115,7 +148,7 @@ def _pose_from_shoes(blobs: list[tuple[float, float, float]]) -> Optional[tuple[
 
 
 def _shoe_blobs_in_feet_band(
-    mask: np.ndarray
+    mask: np.ndarray, cfg=_NATIVE_VISION_PROXY
 ) -> list[tuple[float, float, float]]:
     """Return shoe-pair blobs whose centroid falls in the feet band
     [shoe_y_lo, shoe_y_hi]. Each player's two shoes typically merge into one
@@ -123,11 +156,11 @@ def _shoe_blobs_in_feet_band(
     position' for one player."""
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     blobs: list[tuple[float, float, float]] = []
-    y_lo, y_hi = VISION.shoe_y_lo, VISION.shoe_y_hi
-    zones = VISION.exclusion_zones
+    y_lo, y_hi = cfg.shoe_y_lo, cfg.shoe_y_hi
+    zones = cfg.exclusion_zones
     for c in contours:
         area = cv2.contourArea(c)
-        if area < VISION.shoe_blob_min or area > VISION.shoe_blob_max:
+        if area < cfg.shoe_blob_min or area > cfg.shoe_blob_max:
             continue
         m = cv2.moments(c)
         if m["m00"] == 0:
@@ -152,6 +185,7 @@ def _shoe_blobs_in_feet_band(
 def _per_player_pose(
     jersey_xy: tuple[float, float],
     shoe_blobs: list[tuple[float, float, float]],
+    cfg=_NATIVE_VISION_PROXY,
 ) -> tuple[float, float, Optional[float], Optional[float]]:
     """Given a jersey centroid and a list of available shoe-pair blobs, find
     the nearest shoe blob below the jersey and compute the body-axis rotation.
@@ -165,7 +199,7 @@ def _per_player_pose(
     best_dist = float("inf")
     for (sx, sy, sa) in shoe_blobs:
         dy = sy - jy
-        if dy <= 0 or dy > VISION.jersey_to_shoe_max_dy:
+        if dy <= 0 or dy > cfg.jersey_to_shoe_max_dy:
             continue
         d = (sx - jx) ** 2 + (sy - jy) ** 2
         if d < best_dist:
@@ -185,40 +219,62 @@ def _per_player_pose(
     return jx, jy, float(sin_t), float(cos_t)
 
 
-def detect_pose(frame_rgb: np.ndarray) -> dict[str, Optional[tuple]]:
+def detect_pose(frame_rgb: np.ndarray, scale: Optional[float] = None) -> dict[str, Optional[tuple]]:
     """Extract ball + 4 per-player poses from a Bouncy Basketball frame.
+
+    `scale`:
+      1.0 (default) — process frame at its native resolution. All VISION
+        constants apply directly.
+      0 < s < 1.0   — downsample the frame by `s` via cv2.resize before
+        running the HSV / contour pipeline. All spatial constants (court y
+        bounds, blob area bounds, exclusion zones, feet band, max
+        jersey-to-shoe dy) are rescaled internally; returned coordinates
+        are in the *downsampled* frame's coord space. pack_oca_target
+        normalizes by frame_w/frame_h so end-to-end behavior is invariant
+        as long as the caller passes the scaled frame's dimensions.
 
     Returns dict with:
         ball:    (x, y) or None
         chi:     list of up to 2 (x, y, sin θ_or_None, cos θ_or_None) tuples
-                 — agent's team players. sin/cos = None if body axis can't be
-                 computed (no nearest shoe blob found).
         hou:     same but for opponent.
-        # legacy aliases for backward compat:
-        player:  team centroid of chi (xy + average-orientation), or None
-        opp:     team centroid of hou, or None
-
-    The new per-player fields (chi, hou) are the primary output. Their
-    rotations (sin θ, cos θ) describe each player's body axis — the vector
-    from feet to torso. Upright standing: θ ≈ -90° (sin≈-1, cos≈0).
+        player / opp: legacy team-centroid aliases.
 
     Input MUST be RGB (channel order [R, G, B], not BGR).
     """
+    if scale is None:
+        scale = VISION.vision_scale
+    if scale != 1.0:
+        h, w = frame_rgb.shape[:2]
+        frame_rgb = cv2.resize(
+            frame_rgb,
+            (int(w * scale), int(h * scale)),
+            interpolation=cv2.INTER_AREA,
+        )
+        cfg = _ScaledVision(scale)
+    else:
+        cfg = _NATIVE_VISION_PROXY
+
     hsv = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2HSV)
 
-    ball_blobs = _largest_blobs_in_court(BALL_HSV.mask(hsv), k=1,
-                                          min_area=MIN_BALL_BLOB, max_area=MAX_BALL_BLOB)
+    ball_blobs = _largest_blobs_in_court(
+        BALL_HSV.mask(hsv), k=1,
+        min_area=cfg.ball_blob_min, max_area=cfg.ball_blob_max, cfg=cfg,
+    )
     ball = (ball_blobs[0][0], ball_blobs[0][1]) if ball_blobs else None
 
-    chi_blobs = _largest_blobs_in_court(CHI_RED_HSV.mask(hsv), k=2,
-                                         min_area=MIN_PLAYER_BLOB, max_area=MAX_PLAYER_BLOB)
-    hou_blobs = _largest_blobs_in_court(HOU_WHITE_HSV.mask(hsv), k=2,
-                                         min_area=MIN_PLAYER_BLOB, max_area=MAX_PLAYER_BLOB)
-    shoe_blobs = _shoe_blobs_in_feet_band(SHOE_HSV.mask(hsv))
+    chi_blobs = _largest_blobs_in_court(
+        CHI_RED_HSV.mask(hsv), k=2,
+        min_area=cfg.player_blob_min, max_area=cfg.player_blob_max, cfg=cfg,
+    )
+    hou_blobs = _largest_blobs_in_court(
+        HOU_WHITE_HSV.mask(hsv), k=2,
+        min_area=cfg.player_blob_min, max_area=cfg.player_blob_max, cfg=cfg,
+    )
+    shoe_blobs = _shoe_blobs_in_feet_band(SHOE_HSV.mask(hsv), cfg=cfg)
 
     # Per-player poses
-    chi_players = [_per_player_pose((b[0], b[1]), shoe_blobs) for b in chi_blobs]
-    hou_players = [_per_player_pose((b[0], b[1]), shoe_blobs) for b in hou_blobs]
+    chi_players = [_per_player_pose((b[0], b[1]), shoe_blobs, cfg=cfg) for b in chi_blobs]
+    hou_players = [_per_player_pose((b[0], b[1]), shoe_blobs, cfg=cfg) for b in hou_blobs]
 
     # Sort each team's players by x (leftmost first) so target dims are stable
     # across frames (otherwise player 1/2 swap would confuse the prediction head).

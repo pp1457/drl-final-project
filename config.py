@@ -102,6 +102,13 @@ class VisionConfig:
     # mid-air players.
     jersey_to_shoe_max_dy: int = 250
 
+    # Downsample factor applied inside detect_pose / ScoreboardDiffReward
+    # / is_game_over right before the expensive HSV + contour work. Linear
+    # spatial constants scale by `vision_scale`; area constants by its
+    # square. 1.0 = no downsample (matches v1). 0.5 ≈ 4× cheaper vision at
+    # the cost of a smaller pixel margin for blob detection.
+    vision_scale: float = 1.0
+
 
 VISION = VisionConfig()
 
