@@ -211,6 +211,20 @@ class BouncyBasketballEnv(gym.Env):
         # weren't enough — game has loading screens / animations that don't
         # match a known button or detection but eventually advance.
         if hasattr(self.backend, "send_tap"):
+            from reward import is_game_over as _is_over
+            # If the game has dropped out of the foreground (the Pixel launcher
+            # is showing because the OS killed/backgrounded the activity), no
+            # amount of tapping landscape-coord buttons will help — the home
+            # screen is portrait and those coords land on Google search or
+            # wallpaper. Relaunch the package first.
+            GAME_PKG = "com.DreamonStudios.BouncyBasketball"
+            if hasattr(self.backend, "foreground_package"):
+                fg = self.backend.foreground_package()
+                if fg and fg != GAME_PKG:
+                    if hasattr(self.backend, "launch_app"):
+                        self.backend.launch_app(GAME_PKG)
+                        time.sleep(3.0)  # splash + intro animation
+            recovered = False
             for retry in range(6):
                 self.backend.send_tap(1493, 918)   # PLAY        (team-select)
                 time.sleep(0.5)
@@ -218,18 +232,30 @@ class BouncyBasketballEnv(gym.Env):
                 time.sleep(0.5)
                 self.backend.send_tap(1366, 793)   # REMATCH     (GAME OVER)
                 time.sleep(2.0)                    # wait for transition / loading
-                # Verify we reached gameplay before returning.
                 check_rgb = self.backend.grab_frame()
                 check_pose = self.pose_extractor(check_rgb)
                 detected = any(check_pose.get(k) is not None for k in ("ball", "player", "opp"))
-                # If is_game_over still True we're definitely still on a stats/GAME OVER
-                # screen; the import below is local to avoid a cycle at module load.
-                from reward import is_game_over as _is_over
                 stuck_on_overlay = _is_over(check_rgb)
                 if detected and not stuck_on_overlay:
+                    recovered = True
                     break
-            # Whether we broke out cleanly or exhausted retries, continue;
-            # the caller will see the obs we ended up with.
+                # If retries keep failing, the app may have dropped to the
+                # launcher mid-game (saw this across all 9 ws in the May 22
+                # run). Try relaunching on every second retry.
+                if retry == 2 and hasattr(self.backend, "launch_app"):
+                    self.backend.launch_app(GAME_PKG)
+                    time.sleep(3.0)
+            if not recovered:
+                # Raise instead of silently returning a stuck frame. Previously
+                # we silently returned the bad obs, and PPO would happily train
+                # for hours against fh=0 / v=0 garbage (saw this kill 7/9 ws
+                # around upd 40-50). The trainer's rollout loop catches this
+                # and rebuilds the env (which can include relaunching the
+                # emulator via supervise_once).
+                raise RuntimeError(
+                    f"env.reset(): emulator {getattr(self.backend, 'endpoint', '?')} "
+                    f"stuck after 6 PLAY/NEXT_QUARTER/REMATCH retries — needs hard restart"
+                )
         # Best-effort reset for stateful reward extractors.
         rs = getattr(self, "_reward_state", None)
         if rs is not None and hasattr(rs, "reset"):

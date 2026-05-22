@@ -31,9 +31,21 @@ PRESS_FRAME_MS: int = ACTIONS.press_hold_ms
 
 
 def _adb(serial: str, *args: str, timeout: float = 10.0) -> bytes:
-    """Run `adb -s <serial> <args...>` and return stdout. Raises on failure."""
+    """Run `adb -s <serial> <args...>` and return stdout. Raises on failure.
+
+    NOTE: subprocess.TimeoutExpired is caught and re-raised as a plain
+    RuntimeError. gymnasium's AsyncVectorEnv tries to reconstruct exceptions
+    across the worker/parent pipe as `exctype(value)`, and
+    `subprocess.TimeoutExpired.__init__` requires two positional args (`cmd`,
+    `timeout`) — so the reconstruct fails with a TypeError that crashes the
+    trainer (we saw this kill ws1 + ws6 ~upd 40). Plain RuntimeError pickles
+    and reconstructs cleanly.
+    """
     cmd = ["adb", "-s", serial, *args]
-    out = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+    try:
+        out = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"adb timed out after {timeout}s: {' '.join(cmd)}") from e
     if out.returncode != 0:
         raise RuntimeError(
             f"adb failed: {' '.join(cmd)}\nstdout:\n{out.stdout!r}\nstderr:\n{out.stderr!r}"
@@ -98,6 +110,34 @@ class AdbBackend(EmulatorBackend):
         advance past menu/quarter-end screens after a snapshot load."""
         _adb(self.endpoint.adb_serial, "shell", "input", "tap", str(x), str(y))
 
+    # ---- foreground / app state --------------------------------------
+    def foreground_package(self) -> str:
+        """Return the package name of the currently focused activity, or ''
+        if it can't be parsed. Used to detect when the game has dropped out
+        of foreground (back to the Pixel launcher home screen) — observed
+        across all 9 ws around upd 40-50 in the May 22 run."""
+        try:
+            out = _adb(
+                self.endpoint.adb_serial, "shell",
+                "dumpsys window | grep mCurrentFocus",
+                timeout=5.0,
+            ).decode("utf-8", errors="ignore")
+        except RuntimeError:
+            return ""
+        # Format: "mCurrentFocus=Window{... <package>/<activity>}"
+        import re
+        m = re.search(r"mCurrentFocus=.*\s+([a-zA-Z0-9_.]+)/", out)
+        return m.group(1) if m else ""
+
+    def launch_app(self, package: str) -> None:
+        """Bring the given package's launcher activity to the foreground."""
+        _adb(
+            self.endpoint.adb_serial, "shell",
+            "monkey", "-p", package,
+            "-c", "android.intent.category.LAUNCHER", "1",
+            timeout=15.0,
+        )
+
     # ---- lifecycle ----------------------------------------------------
     def load_snapshot(self, name: Optional[str] = None) -> None:
         snap = name or self.endpoint.snapshot_names[0]
@@ -113,14 +153,14 @@ class AdbBackend(EmulatorBackend):
         try:
             state = _adb(self.endpoint.adb_serial, "get-state", timeout=3.0).strip()
             return state == b"device"
-        except (RuntimeError, subprocess.TimeoutExpired):
+        except RuntimeError:
             return False
 
     def restart(self) -> None:
         """Kill the emulator. The orchestrator's supervisor relaunches it."""
         try:
             _adb(self.endpoint.adb_serial, "emu", "kill", timeout=10.0)
-        except (RuntimeError, subprocess.TimeoutExpired):
+        except RuntimeError:
             pass
         # Wait until adb agrees the device is gone, then return.
         for _ in range(20):

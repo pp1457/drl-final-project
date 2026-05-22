@@ -329,9 +329,15 @@ def main():
     torch.set_num_threads(1)
     torch.set_num_interop_threads(1)
 
-    envs = gym.vector.AsyncVectorEnv(
-        [make_env_fn(args.env_id, i, args.frame_stack) for i in range(args.num_envs)],
-    )
+    # SyncVectorEnv (sequential in main process) instead of AsyncVectorEnv:
+    # - sidesteps gym's TimeoutExpired-reconstruct bug (worker→parent pipe
+    #   tried `exctype(value)` on subprocess.TimeoutExpired which needs 2
+    #   positional args; killed ws1+ws6 mid-training)
+    # - lets exceptions in env.step / env.reset bubble straight into the
+    #   rollout loop where we can recover
+    # At N_ENVS=2 with adb-bound latency, sequential vs parallel costs ~0.
+    env_fns = [make_env_fn(args.env_id, i, args.frame_stack) for i in range(args.num_envs)]
+    envs = gym.vector.SyncVectorEnv(env_fns)
     assert isinstance(envs.single_action_space, gym.spaces.Discrete)
     n_actions = int(envs.single_action_space.n)
     assert n_actions == N_ACTIONS, (n_actions, N_ACTIONS)
@@ -369,38 +375,92 @@ def main():
     num_updates = args.total_timesteps // batch_size
     ep_returns = deque(maxlen=64)
 
+    def _recover_envs(reason: str):
+        """Hard-restart the vec env after a step/reset failure.
+
+        Kills every emulator outright (we don't try to distinguish between
+        "emulator dead", "adb daemon alive but shell wedged", and "game
+        backgrounded" — diagnosing those takes more adb calls that may also
+        wedge), then lets supervise_once relaunch each from the boot snapshot,
+        then close + remake the SyncVectorEnv.
+        """
+        nonlocal envs
+        import traceback, subprocess
+        print(f"!! recovering envs: {reason}", flush=True)
+        traceback.print_exc()
+        if args.env_id == "bouncy":
+            try:
+                from orchestrate import load_endpoints, supervise_once
+                endpoints = load_endpoints()
+                # Step 1: kill every emulator (adb emu kill is fire-and-forget).
+                for ep in endpoints:
+                    try:
+                        subprocess.run(
+                            ["adb", "-s", ep.adb_serial, "emu", "kill"],
+                            capture_output=True, timeout=5.0,
+                        )
+                    except Exception as e:
+                        print(f"   emu kill({ep.adb_serial}) failed: {e!r}", flush=True)
+                # Step 2: supervise_once sees them dead and relaunches.
+                for ep in endpoints:
+                    try:
+                        if supervise_once(ep):
+                            print(f"   relaunched {ep.adb_serial}", flush=True)
+                    except Exception as e:
+                        print(f"   supervise_once({ep.adb_serial}) failed: {e!r}", flush=True)
+            except Exception as e:
+                print(f"   load_endpoints failed: {e!r}", flush=True)
+        try:
+            envs.close()
+        except Exception:
+            pass
+        envs = gym.vector.SyncVectorEnv(env_fns)
+        fresh, _ = envs.reset(seed=args.seed + update)
+        return to_chw(fresh)
+
+    consecutive_failures = 0
     for update in range(1, num_updates + 1):
         if args.anneal_lr:
             frac = 1.0 - (update - 1) / num_updates
             optimizer.param_groups[0]["lr"] = frac * args.learning_rate
 
-        for step in range(args.num_steps):
-            global_step += args.num_envs
-            obs_buf[step] = next_obs
-            dones_buf[step] = next_done
-            with torch.no_grad():
-                action, logprob, _, value, _ = agent.get_action_and_value(next_obs.float())
-                values_buf[step] = value.flatten()
-            actions_buf[step] = action
-            logprobs_buf[step] = logprob
+        try:
+            for step in range(args.num_steps):
+                global_step += args.num_envs
+                obs_buf[step] = next_obs
+                dones_buf[step] = next_done
+                with torch.no_grad():
+                    action, logprob, _, value, _ = agent.get_action_and_value(next_obs.float())
+                    values_buf[step] = value.flatten()
+                actions_buf[step] = action
+                logprobs_buf[step] = logprob
 
-            next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
-            done = np.logical_or(term, trunc)
-            rewards_buf[step] = torch.as_tensor(reward, dtype=torch.float32, device=device)
-            next_obs = to_chw(next_obs_np)
-            next_done = torch.as_tensor(done, dtype=torch.float32, device=device)
-            next_obs_buf[step] = next_obs
+                next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
+                done = np.logical_or(term, trunc)
+                rewards_buf[step] = torch.as_tensor(reward, dtype=torch.float32, device=device)
+                next_obs = to_chw(next_obs_np)
+                next_done = torch.as_tensor(done, dtype=torch.float32, device=device)
+                next_obs_buf[step] = next_obs
 
-            # OCA targets come from the *next* step's info (target_{t+1})
-            if "oca_target" in info:
-                oca_target_buf[step] = torch.as_tensor(np.stack(info["oca_target"]), device=device)
-                oca_mask_buf[step] = torch.as_tensor(np.stack(info["oca_mask"]), device=device)
+                # OCA targets come from the *next* step's info (target_{t+1})
+                if "oca_target" in info:
+                    oca_target_buf[step] = torch.as_tensor(np.stack(info["oca_target"]), device=device)
+                    oca_mask_buf[step] = torch.as_tensor(np.stack(info["oca_mask"]), device=device)
 
-            if "episode" in info:
-                # AsyncVectorEnv RecordEpisodeStatistics packs into _episode mask
-                for r, mask in zip(info["episode"]["r"], info["episode"].get("_r", [True]*args.num_envs)):
-                    if mask:
-                        ep_returns.append(float(r))
+                if "episode" in info:
+                    for r, mask in zip(info["episode"]["r"], info["episode"].get("_r", [True]*args.num_envs)):
+                        if mask:
+                            ep_returns.append(float(r))
+            consecutive_failures = 0
+        except Exception as e:
+            consecutive_failures += 1
+            if consecutive_failures >= 5:
+                raise RuntimeError(
+                    f"rollout failed {consecutive_failures} times in a row; bailing"
+                ) from e
+            next_obs = _recover_envs(f"upd {update} step {step}: {e!r}")
+            next_done = torch.zeros(args.num_envs, device=device)
+            continue  # skip the PPO update on a partial/corrupt rollout
 
         # Bootstrap value at the end of the rollout
         with torch.no_grad():
