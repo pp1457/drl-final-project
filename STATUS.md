@@ -133,3 +133,82 @@ adb -s emulator-6554 shell monkey -p com.DreamonStudios.BouncyBasketball -c andr
 4. **Airplane mode is part of the snapshot.** Ads break the training pipeline; this is the most robust fix.
 5. **CHI vs HOU at default stats**, no CUSTOMIZE edits. Reproducibility matters more than balance — strength is held constant across all 9 experimental configs so it's not a confound on the OCA/DPR comparison.
 6. **Action space corrected to Discrete(2): {NO_PRESS, PRESS}.** Bouncy Basketball is a one-button game (confirmed via web search and in-game observation). Tap-and-hold anywhere = jump (longer hold = higher), release in air = shoot, lateral movement is automatic. The previous 6-action design (NOOP/LEFT/RIGHT/JUMP/CHARGE/RELEASE) was based on incorrect assumptions about platformer-style controls. AdbBackend now chains 130ms `input swipe` calls to simulate sustained holds.
+
+## 2026-05-22/23 — overnight: matrix v2 → v5, found ROI bug + autopilot
+
+Five matrix attempts in 24h. v1-v4 had silently-broken reward signal; v5 has the right
+signal but the game's autopilot dominates outcomes, leaving little for the policy to learn.
+
+### Infrastructure fixes (durable, in `env.py` + scripts)
+1. **Crash-proof recovery** (`_recover_envs`, `train.py`): catches subprocess.TimeoutExpired,
+   adb screencap timeouts, env.reset failures; hard-restarts emulator without raising.
+2. **Variable-hold motionevent backend** (`AdbMotionEventBackend`, `adb_backend.py`):
+   stock `input motionevent DOWN|UP x y` lets a touch persist across env steps. Replaces
+   atomic `input swipe` taps. Minitouch was abandoned after multi-display IDC routing
+   on Pixel-5 x86_64 AVD sent events to a virtual display the game doesn't render to.
+3. **Sustained-overlay gate** + **auto-advance taps** (`env.py`): the `is_game_over`
+   red-pixel detector false-positives on OUT OF BOUNDS (4800 red px) and END OF Nth
+   QUARTER (similar count). Episodes were terminating after ~10–65 steps. Now:
+   - gate `done` until N=30 consecutive overlay frames,
+   - on hit, fire reset()-style PLAY/NEXT_QUARTER/REMATCH taps to advance past
+     quarter-end screens; only the SECOND streak hit (advance failed) terminates.
+   Episodes now span full 4-quarter games (~1024 steps).
+4. **Blank-frame watchdog** (`env.py`): raises after 180 consecutive frames with
+   zero pose detections, triggering hard emulator restart. Catches the failure mode
+   where reset() succeeded on a transient-detection frame but the game lands on a
+   menu/loading screen.
+5. **Hourly log archiving** (`scripts/archive_logs.sh`) + **metrics CSV extraction**
+   (`scripts/extract_metrics.py`). launch_on_ws.sh truncates logs at start; archive
+   tarballs + CSV snapshots are written to `~/drl_logs_archive/`.
+6. **`eval.py --serial`**: bypass `endpoints.json` and target an arbitrary adb serial,
+   so eval can run on a side emulator while training holds the main farm.
+
+### Reward-signal bug found mid-v4 — `config.py` ROI fix
+The pre-fix CHI/HOU score-detection ROIs were both **wrong**:
+- `chi_score_roi = (260, 360, 970, 1120)` pointed at HOU's score panel.
+- `hou_score_roi = (260, 360, 800, 950)` pointed at a blank blue side-bar.
+For 4 matrix runs we were counting **HOU's** score events as CHI's, and never seeing
+HOU score at all. `opponent_score_weight=-1` never fired. Detected via 1607 training
+samples where ret was always positive (9.9–12.5 range) — statistically impossible if
+both teams could score.
+Fixed values (re-measured visually from a Q4 frame, then calibrated via pixel-diff):
+- `chi_score_roi = (320, 380, 1240, 1360)` — captures red "CHI 24" digit area
+- `hou_score_roi = (320, 380, 980, 1100)` — captures blue "HOU 3" digit area
+- `diff_threshold = 10.0` (was 25.0; tight digit-only crops have lower diff floor)
+
+### Most damning: PRESS action does not control CHI
+Verified via `diag_actions.py` (200 steps × 3 trials, fixed snapshot):
+- always-press: CHI events=2, HOU events=4
+- never-press: CHI events=6, HOU events=4
+- alternating: CHI events=4, HOU events=4
+The game's autopilot drives CHI; our taps actively *interfere* with it. The post-trial
+GAME OVER screen showed CHI 32 / HOU 0 from autopilot play, but only 2 of those score
+events were credited during the always-press window. Optimal policy in this setup is
+"do nothing" — which PPO cannot easily learn from a noisy mostly-autopilot reward.
+
+### Eval at v5 upd 50 (3 ep each, stochastic, full 1024-step games)
+| config | scores | mean | std |
+|---|---|---|---|
+| baseline (ws3_s2) | [+1, -6,  0] | -1.67 | 3.79 |
+| OCA      (ws6_s2) | [ 0, -1, -8] | -3.00 | 4.36 |
+| DPR     (ws10_s2) | [+1, -1, -3] | -1.00 | 2.00 |
+
+All means are negative — trained policies lose to HOU on average. With n=3 (std ≈ 4),
+std-error ≈ 2.3, so the means are not statistically distinguishable from 0. The
+ordering DPR > baseline > OCA matches training trends but with wide error bars.
+
+### Latency profile (ws10 with 3 emulators contending for adb)
+- adb screencap PNG (`grab_frame`): **655 ms** (bottleneck)
+- send_action (motionevent + 33 ms hold): 120 ms
+- pose detection: 31 ms
+- reward extract: 1.6 ms
+- per step: ~810 ms → 1.2 steps/s
+For real-time use we'd need minicap or raw screencap (~30 ms vs 655 ms).
+
+### Open items / decisions for the paper
+- Engineering story is solid: motionevent backend, crash-proof recovery, sustained-
+  overlay gate, vision watchdog, ROI diagnostic — all publishable infrastructure.
+- RL story is weak: trained policies barely distinguishable from random, autopilot
+  dominates, single PRESS action has limited expressiveness, 100k transitions is
+  tiny for sparse-reward games. Best framing: "challenges of RL on a real Android
+  game where the player is partially autonomous".
