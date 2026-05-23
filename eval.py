@@ -25,8 +25,56 @@ import numpy as np
 import torch
 import gymnasium as gym
 
-from env import N_ACTIONS, OBS_H, OBS_W
+from env import N_ACTIONS, OBS_H, OBS_W, BouncyBasketballEnv
 from train import Agent, make_env_fn
+
+
+def _make_bouncy_env_for_serial(serial: str, backend_name: str, frame_skip: int):
+    """Build a Bouncy env that connects to an explicit adb serial — bypasses
+    orchestrate's endpoints.json so we can eval on a side emulator while the
+    training farm holds the main ports."""
+    from adb_backend import AdbBackend, AdbMotionEventBackend
+    from orchestrate import EmulatorEndpoint
+    from reward import ScoreboardDiffReward
+    from vision import detect_pose
+    endpoint = EmulatorEndpoint(
+        adb_serial=serial,
+        minicap_port=0,
+        minitouch_port=0,
+        snapshot_names=("clean_boot", "clean_boot_lac"),
+    )
+    if backend_name == "adb-motionevent":
+        backend = AdbMotionEventBackend(endpoint)
+        backend.setup()
+    else:
+        backend = AdbBackend(endpoint)
+    reward_extractor = ScoreboardDiffReward()
+    env_kwargs = {
+        "backend": backend,
+        "pose_extractor": detect_pose,
+        "reward_extractor": reward_extractor,
+    }
+    if frame_skip > 0:
+        env_kwargs["frame_skip"] = frame_skip
+    env = BouncyBasketballEnv(**env_kwargs)
+    env._reward_state = reward_extractor
+    return env
+
+
+def _wrap_env_for_eval(env, frame_stack: int):
+    """Apply the same observation transforms make_env_fn would (TransformObs +
+    FrameStack + RecordEpisodeStatistics) so the trained policy's tensor shapes
+    line up."""
+    env = gym.wrappers.TransformObservation(
+        env,
+        lambda o: o[..., None],
+        observation_space=gym.spaces.Box(
+            low=0, high=255, shape=(OBS_H, OBS_W, 1), dtype=np.uint8
+        ),
+    )
+    env = gym.wrappers.FrameStackObservation(env, stack_size=frame_stack)
+    env = gym.wrappers.RecordEpisodeStatistics(env)
+    return env
 
 
 @dataclass
@@ -100,15 +148,42 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--deterministic", action="store_true")
     ap.add_argument("--output", default=None, help="optional JSON output file")
+    ap.add_argument(
+        "--serial",
+        default=None,
+        help="If set, bypass endpoints.json and connect directly to this adb "
+             "serial (e.g. emulator-6558). Used when eval'ing on a side emulator "
+             "while training holds the main farm.",
+    )
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     agent, train_args = load_agent(args.checkpoint, device)
 
-    env_fn = make_env_fn(args.env_id, rank=0, frame_stack=train_args["frame_stack"])
-    env = env_fn()
+    # Pull backend + frame_skip from train_args so the eval matches training
+    # conditions (variable-hold motionevent backend vs atomic adb taps changes
+    # the policy's effective action semantics).
+    backend = train_args.get("backend", "adb")
+    frame_skip = train_args.get("frame_skip", 0)
+    if args.env_id == "bouncy" and args.serial:
+        env = _make_bouncy_env_for_serial(
+            args.serial, backend_name=backend, frame_skip=frame_skip,
+        )
+        # Wrap with the same observation transforms make_env_fn applies so the
+        # checkpoint's tensors line up.
+        env_fn = lambda: env
+        env = _wrap_env_for_eval(env, frame_stack=train_args["frame_stack"])
+    else:
+        env_fn = make_env_fn(
+            args.env_id, rank=0, frame_stack=train_args["frame_stack"],
+            backend=backend, frame_skip=frame_skip,
+        )
+        env = env_fn()
     res = rollout_episodes(agent, env, args.episodes, device, args.seed, args.deterministic)
     env.close()
+    # Final cumulative score per episode — under opponent_score_weight=-1 this
+    # is (CHI score − HOU score) i.e. the net match outcome.
+    print("per-episode net scores:", [round(r, 2) for r in res.raw_returns])
 
     print(f"checkpoint: {args.checkpoint}")
     print(f"env_id:     {args.env_id}")
