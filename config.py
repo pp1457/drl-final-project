@@ -119,19 +119,23 @@ VISION = VisionConfig()
 @dataclasses.dataclass(frozen=True)
 class RewardConfig:
     """Pixel-diff reward parameters on the CHI scoreboard region."""
-    # ROI: (y0, y1, x0, x1) in the 2340x1080 frame. CHI score lives in a
-    # red-bordered box containing both the "CHI" label and the score digits.
-    chi_score_roi: tuple[int, int, int, int] = (260, 360, 970, 1120)
+    # ROI: (y0, y1, x0, x1) in the 2340x1080 frame. The in-game scoreboard
+    # is laid out as: [HOU label/score]  [shot-clock]  [CHI label/score].
+    # CHI panel is RIGHT-side (red bg); HOU panel is LEFT-side (blue bg).
+    #
+    # Bug-fix 2026-05-23: previous values had CHI and HOU swapped — `chi`
+    # pointed at HOU's score, `hou` pointed at the blue side-bar (no digits).
+    # That made HOU's points get counted as CHI's, opponent_score_weight
+    # never fired, and ret was just "how often HOU scores" with the wrong
+    # sign. Visually re-measured from a Q4 gameplay frame.
+    chi_score_roi: tuple[int, int, int, int] = (320, 380, 1240, 1360)
+    hou_score_roi: tuple[int, int, int, int] = (320, 380, 980, 1100)
 
-    # HOU score ROI — mirror-symmetric to CHI across the scoreboard center
-    # (~x=960 on a 1920-wide frame). Verified visually on a Q3 gameplay frame
-    # where HOU "24" sits at roughly x∈[770,870], y∈[260,360]. The 800-950
-    # window has comfortable margin for 1-2 digit scores.
-    hou_score_roi: tuple[int, int, int, int] = (260, 360, 800, 950)
-
-    # Tuned by inspection: clock-tick changes ~10-15 mean-abs-diff; a score
-    # change is ~30-50. Threshold above the clock-tick floor.
-    diff_threshold: float = 25.0
+    # Re-tuned 2026-05-23 after ROI fix. Tight digit-only crops (excluding the
+    # static CHI/HOU labels) produce mean-abs-diff ~0-3 idle and ~10-40 on a
+    # score change. Threshold 10 catches the smaller score changes while
+    # tolerating the ~3-frame ambient flicker.
+    diff_threshold: float = 10.0
 
     # After a score change is detected, suppress further detections for N
     # steps to avoid double-counting the multi-frame scoreboard animation.
