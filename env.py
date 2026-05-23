@@ -184,6 +184,34 @@ class BouncyBasketballEnv(gym.Env):
 
         self._step_count = 0
         self._raw_score = 0
+        # Vision watchdog: count consecutive step()s that returned an all-zero
+        # detection mask. If this exceeds _BLANK_STREAK_LIMIT we raise so the
+        # trainer's _recover_envs path hard-restarts the emulator. Without this
+        # watchdog, a degenerate game state (menu, blank intermission) trains
+        # PPO on garbage frames indefinitely while reset() keeps thinking it
+        # succeeded — observed on ws5_oca_s1 at upd 25-26 on the 2026-05-22 run.
+        self._blank_streak = 0
+        # Game-over overlay watchdog: the reward extractor's `done` flag fires
+        # whenever the top of the screen has saturated red text. That catches
+        # the real GAME OVER screen — but ALSO catches the very-frequent "OUT
+        # OF BOUNDS" mid-game overlay AND the per-quarter "END OF X QUARTER"
+        # transition screens (every ~65 steps = once per ~2 s of game time).
+        # All three look identical to red-pixel counting. Strategy: when the
+        # streak hits the limit, try the reset()-style advance taps once; if
+        # the overlay clears we keep playing (it was a quarter end); if it
+        # persists past a second LIMIT we terminate for real (GAME OVER).
+        self._overlay_streak = 0
+        self._advance_attempted = False
+
+    # ≈ 6 s of game time at frame_skip=1 (30fps). Long enough that a brief
+    # transition (e.g. SHOT clock animation) doesn't trip it, short enough
+    # that we lose ~1/6 of a 256-step rollout at most before recovery kicks in.
+    _BLANK_STREAK_LIMIT = 180
+
+    # ≈ 1 s of sustained red overlay required before we declare the episode
+    # actually over. OUT OF BOUNDS animations clear in ~0.5 s; GAME OVER stays
+    # forever. At frame_skip=1 this is 30 frames.
+    _OVERLAY_STREAK_LIMIT = 30
 
     # -----------------------------------------------------------------
     # Public API
@@ -204,6 +232,9 @@ class BouncyBasketballEnv(gym.Env):
         self.backend.load_snapshot(chosen)
         self._step_count = 0
         self._raw_score = 0
+        self._blank_streak = 0
+        self._overlay_streak = 0
+        self._advance_attempted = False
         # Advance from whatever screen the snapshot landed on into active play.
         # Strategy: tap the three known "go" buttons (PLAY, NEXT QUARTER,
         # REMATCH), then POLL until we see a gameplay frame (=at least one
@@ -232,11 +263,27 @@ class BouncyBasketballEnv(gym.Env):
                 time.sleep(0.5)
                 self.backend.send_tap(1366, 793)   # REMATCH     (GAME OVER)
                 time.sleep(2.0)                    # wait for transition / loading
-                check_rgb = self.backend.grab_frame()
-                check_pose = self.pose_extractor(check_rgb)
-                detected = any(check_pose.get(k) is not None for k in ("ball", "player", "opp"))
-                stuck_on_overlay = _is_over(check_rgb)
-                if detected and not stuck_on_overlay:
+                # Multi-frame validation: single-frame check was too lenient —
+                # it would accept a transient detection during a menu animation
+                # and PPO would then train on hours of blank frames. Require
+                # ≥3/5 frames over ~1s to actually contain a detection and
+                # mostly avoid the GAME OVER overlay. We tolerate up to 1
+                # "is_over" frame per poll window because OOB animations can
+                # be tripped by the same red-pixel check in the middle of
+                # otherwise-fine gameplay.
+                detected_count = 0
+                overlay_count = 0
+                for poll in range(5):
+                    if poll > 0:
+                        time.sleep(0.2)
+                    check_rgb = self.backend.grab_frame()
+                    if _is_over(check_rgb):
+                        overlay_count += 1
+                        continue
+                    check_pose = self.pose_extractor(check_rgb)
+                    if any(check_pose.get(k) is not None for k in ("ball", "player", "opp")):
+                        detected_count += 1
+                if detected_count >= 3 and overlay_count <= 1:
                     recovered = True
                     break
                 # If retries keep failing, the app may have dropped to the
@@ -288,6 +335,38 @@ class BouncyBasketballEnv(gym.Env):
             self.backend.send_action(int(action))
         rgb = self.backend.grab_frame()
         score, episode_done = self.reward_extractor(rgb)
+        # Sustained-overlay gate. The reward extractor's `done` fires on any
+        # red text in the top band — that catches GAME OVER, OUT OF BOUNDS,
+        # and the "END OF Nth QUARTER" transitions. Quarter ends happen every
+        # ~65 steps (~2 s of game time) and would terminate every episode if
+        # untreated. Strategy:
+        #   - <LIMIT consecutive `done` frames: gate it (probably OOB).
+        #   - exactly LIMIT, first time: try tapping the same buttons reset()
+        #     would (PLAY/NEXT_QUARTER/REMATCH) to advance the screen, and
+        #     reset the streak. If it was a quarter end, the overlay clears
+        #     and the episode continues into the next quarter.
+        #   - LIMIT again (advance already attempted): propagate True — this
+        #     is a real GAME OVER, not a quarter transition.
+        if episode_done:
+            self._overlay_streak += 1
+            if self._overlay_streak >= self._OVERLAY_STREAK_LIMIT:
+                if not self._advance_attempted:
+                    if hasattr(self.backend, "send_tap"):
+                        self.backend.send_tap(1493, 918)   # PLAY (team select)
+                        time.sleep(0.3)
+                        self.backend.send_tap(1170, 793)   # NEXT QUARTER
+                        time.sleep(0.3)
+                        self.backend.send_tap(1366, 793)   # REMATCH
+                        time.sleep(1.0)
+                    self._advance_attempted = True
+                    self._overlay_streak = 0
+                    episode_done = False
+                # else: already tried; let episode_done propagate as real GAME OVER
+            else:
+                episode_done = False
+        else:
+            self._overlay_streak = 0
+            self._advance_attempted = False
         # Per-step reward = delta of the cumulative net score. With the new
         # ScoreboardDiffReward this can be negative (opponent scored). The
         # old `max(0, ...)` truncation is gone — that was hiding the negative
@@ -297,6 +376,20 @@ class BouncyBasketballEnv(gym.Env):
         self._step_count += 1
         truncated = self._step_count >= self.max_episode_steps
         info = self._build_info(rgb, score_delta=reward)
+        # Vision watchdog. If `_pack_oca_from_pose` produced an all-zero mask,
+        # vision found nothing this frame. A sustained streak means the game
+        # is stuck on a non-gameplay screen (menu, loading, blank) and our
+        # rollout is garbage — raise so _recover_envs hard-restarts the emu.
+        if int(info["oca_mask"].sum()) == 0:
+            self._blank_streak += 1
+            if self._blank_streak >= self._BLANK_STREAK_LIMIT:
+                raise RuntimeError(
+                    f"env.step(): {self._BLANK_STREAK_LIMIT} consecutive blank "
+                    f"frames from {getattr(self.backend, 'endpoint', '?')} — "
+                    f"vision pipeline returned no detections; needs hard restart"
+                )
+        else:
+            self._blank_streak = 0
         obs = self._to_obs(rgb)
         return obs, reward, bool(episode_done), bool(truncated), info
 
