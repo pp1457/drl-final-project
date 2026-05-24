@@ -333,3 +333,178 @@ Once the four fixes landed (drop `full_rgb`, OCA K=8, max_episode_steps=1024, N=
 ### Day 5 (planned)
 
 - Final edits; submit by 23:59.
+
+---
+
+# Android Training Setup — Traps & Lessons (added 2026-05-24)
+
+A field guide to everything that went wrong (or surprised us) setting up Bouncy Basketball RL training on real Android emulators. **Read this before changing anything in the pipeline.**
+
+## 1. The team-mapping trap (biggest gotcha)
+
+**Default assumption is wrong.** The team-select screen has two pedestals — LEFT (ROAD) and RIGHT (HOME). The little icons between them are NOT decoration:
+- Left pedestal icon = **🖥️ COMPUTER (CPU)**
+- Right pedestal icon = **🎮 PLAYER (us)**
+
+So with default CHI-vs-HOU matchup, **WE control HOU, not CHI**. This is opposite of what the earlier STATUS.md and the original proposal assumed.
+
+**How to verify which team you're playing**: in active gameplay, do an `input motionevent DOWN x y` at the press coord while screen-capturing before/during. The team whose y-positions shoot upward (jumping ~150 px) is the one you control.
+
+**Consequence**: the reward extractor's `chi_score_roi` and `hou_score_roi` must respect the labels (`chi_score_roi` = +1 = our team's score). If we're HOU, then **`chi_score_roi` must point at HOU's panel** and vice versa. The ROIs swap with the team mapping, not with team names.
+
+## 2. CUSTOMIZE menu mechanics
+
+The CUSTOMIZE screen has skill-point counters "X/32" under each player:
+- **Tap directly on the number** to increment by 1
+- Wraps: 32 → 1 → 2 → 3 ...
+
+To max a team: tap the left player's counter `(32 − current)` times, then the right player's counter the same way. Tap SAVE (green) → confirms with "SAVE CHANGES?" prompt → tap YES.
+
+**Caveat 1**: CUSTOMIZE changes apply to RAM state immediately, but **`force-stop` of the app wipes the in-memory customization**. PlayerPrefs do NOT persist team-stat customizations across force-stops in this APK. To preserve: save a snapshot RIGHT AFTER customizing, with no force-stop in between.
+
+**Caveat 2**: Maxing the opponent's stats does **not** make them shoot. The opponent's CPU AI is hardcoded passive (defensive only). CUSTOMIZE only affects physical stats (speed, jump, accuracy) not decision-making.
+
+## 3. The autopilot reality
+
+Bouncy Basketball has two distinct AIs depending on which team you've selected:
+- **Player-team CPU (e.g., CHI if you're playing CHI)**: aggressive offensive AI. Auto-walks to ball, auto-shoots near hoop. Scores 7-12 per quarter with NO user input.
+- **Opponent CPU**: defensive AI. Pursues ball, never initiates shots. Scores ~0-2 per quarter via accidental physics rebounds.
+
+This makes the reward landscape non-trivial:
+- If you're playing the team that already scores (autopilot does the work), your job is "when to add presses on top." Limited room above the ceiling.
+- If you're playing the team that doesn't shoot (passive AI), the agent has to do everything. Sparse signal.
+
+**The autopilot is baked into the game design** — you can't disable it via Options. "Control All" only changes the button layout, not the AI personality.
+
+## 4. Options menu settings that matter
+
+Open Options menu via the **gear icon** (not the bar-chart icon) in the main menu. Real coord on landscape 2340x1080: roughly **(1395, 720)**.
+
+Critical settings:
+- **SWITCH SIDES** — if ON, teams swap court ends every quarter (basketball convention). **This silently inverts your reward sign per quarter** because the team panel positions stay fixed but team OFFENSE direction flips. **TURN OFF.**
+- **CONTROL ALL** — if ON, gives explicit JUMP buttons in the bottom-right (one per player). If OFF, single tap-anywhere controls the active player. **Keep OFF for cleaner action semantics.**
+- **DIFFICULTY** — Easy / Hard. Hard makes opponent's defense tighter but doesn't make them shoot.
+- **QUARTERS / QUARTER-TIME** — 4 quarters × 30s gives ~2-min matches.
+
+Options DO persist via PlayerPrefs across force-stops (unlike CUSTOMIZE).
+
+## 5. Snapshot portability gotchas
+
+Android emulator snapshots are NOT trivially portable between machines:
+
+- A snapshot lives in `.../pixel5_api31.avd/snapshots/clean_boot_vN/` (just RAM + textures + tiny config)
+- It REFERENCES the qcow2 deltas: `userdata-qemu.img.qcow2`, `cache.img.qcow2`, `encryptionkey.img.qcow2`
+- Rsync'ing only the snapshot dir → emulator boots to a default Android state (Chrome welcome screen), not Bouncy Basketball
+
+**Always rsync the qcow2 deltas along with the snapshot dir.** Roughly:
+```
+rsync -az AVD/userdata-qemu.img.qcow2 AVD/cache.img.qcow2 \
+          AVD/encryptionkey.img.qcow2 AVD/hardware-qemu.ini \
+          AVD/emulator-user.ini AVD/snapshots/clean_boot_vN/ \
+          host:AVD/
+```
+
+## 6. Saving snapshots requires exclusive AVD lock
+
+- The emulator's saved snapshot mechanism only works in WRITABLE mode (no `-read-only` flag).
+- But the AVD has an exclusive-write lock: only ONE writable instance at a time.
+- If training is running (with `-read-only` flag) on the same AVD, you CAN'T launch a writable instance for snapshot setup until you kill the training emulator.
+
+Workaround for parallel work: launch the side emu with `-read-only` (read frames, no save), then kill the training emu when you actually need to save.
+
+## 7. adb auto-discovery range limit
+
+`adb` auto-discovers emulators only on console ports 5555–5585. We use BASE_PORT=6554 (to avoid student collisions), so:
+- `adb devices` doesn't see our emulators by default
+- But the launched emulator pings whatever `ANDROID_ADB_SERVER_PORT` points to (we set 5613 per UID hash). With env vars correctly set BEFORE launch, the emulator registers via that path and shows up as `emulator-6558`.
+- If env vars aren't set, you can fall back to `adb connect localhost:6559` (the adb-side port = console+1). The serial becomes `localhost:6559` instead of `emulator-6558`. **But the `adb emu ...` console commands (snapshot save/load) require the `emulator-XXXX` style serial** — `localhost:X` won't route to the qemu console.
+
+**Always `source android_env.sh` before any adb work.**
+
+## 8. Snapshot save via emulator console socket
+
+When `adb emu avd snapshot save NAME` doesn't work (e.g., serial is `localhost:6559`), you can directly connect to the emulator's TCP console:
+
+```python
+import socket
+token = open(os.path.expanduser('~/.emulator_console_auth_token')).read().strip()
+s = socket.create_connection(('localhost', 6558))  # console port
+s.recv(4096)  # banner
+s.sendall(f'auth {token}\n'.encode())
+s.recv(4096)
+s.sendall(b'avd snapshot save clean_boot_v8\n')
+# Wait, read OK / KO
+```
+
+## 9. Reward extractor pitfalls
+
+`ScoreboardDiffReward` pixel-diffs the score ROIs. Pitfalls we hit:
+
+- **ROI coordinates measured from a Q4 frame are wrong if SWITCH SIDES is ON** — teams swap sides each quarter, so the panel positions are stable but the team→panel mapping flips. Measure on Q1 with SWITCH SIDES OFF.
+- **Tight digit-only ROIs are better than full-panel ROIs**: the full panel includes the team label which doesn't change, so the diff baseline is lower and threshold can be tighter.
+- **Cooldown matters**: a score event animates over ~8 frames. Without cooldown, you'll count one basket as 3-5 events.
+- **GAME OVER detector false-positives** on OUT OF BOUNDS overlays and END OF QUARTER transitions. Mitigation: overlay-streak gate that requires N consecutive overlay frames before declaring done.
+
+## 10. Press coord vs. tutorial cursor
+
+The in-game tutorial draws a hand cursor at approximately (1900, 860) — that's pointing AT a region inside the play area but isn't itself a button. Press at (1900, 860) registers as "tap anywhere → active player jumps." With Control All ON, there are explicit JUMP buttons at (1889, 978) and (2114, 978) — NOT where the cursor points.
+
+**With Control All OFF, (1900, 860) is fine** (tap-anywhere works).
+
+## 11. PPO behavior in this env
+
+The env's reward landscape has a property: **uniform random policy is locally near-optimal.** Reasons:
+- Opponent doesn't shoot (so HOU score is mostly 0)
+- Our team's autopilot does most scoring on its own
+- Committed PRESS patterns interfere with autopilot positioning → fewer scores
+
+Consequence: PPO with default `ent_coef=0.05` stays at entropy ≈ log(2) = 0.693 for the entire 20k-step training run. Seeds that commit (entropy drops below 0.65) tend to perform WORSE than seeds that stay uniform.
+
+**To break this**: use intrinsic exploration (RND, ICM — we added RND in v9) or accept that the env is degenerate and pivot to a clone.
+
+## 12. Diagnostic protocol (run before training!)
+
+Always validate the action→reward link BEFORE launching a training matrix. Use `diag_actions.py`:
+1. Load the snapshot.
+2. Advance to gameplay.
+3. Run THREE trials of 200 steps each:
+   - Always PRESS (with stateful hold)
+   - Never PRESS
+   - Press in a charge-and-release pattern (e.g., 20 PRESS, 1 NO_PRESS, repeat)
+4. Count score events per team in each trial.
+5. **Expect monotone separation**: charge-release should score more than always or never.
+
+If you DON'T see this separation, the env has a degenerate reward landscape and training will not converge to a meaningful policy.
+
+## 13. Infrastructure / distribution
+
+- Each ws has its own local `/tmp2/$USER/DRL_final/`. NFS-mounted home (`/home/student/12/$USER/`) is shared, so logs and checkpoints go there.
+- `scripts/deploy_one.sh` does first-time setup (SDK + AVD + APK + venv).
+- `scripts/dispatch_all.sh` SSHs to each ws and starts training; the remote process is `disown`ed so the SSH can close.
+- `scripts/launch_on_ws.sh` runs on each ws: pkills leftovers, launches emulator farm, runs train.py, mirrors checkpoint to NFS.
+
+**Each ws can run 2-3 emulators max** before hitting the per-user thread watchdog. Cap `OMP_NUM_THREADS=1` etc. before importing torch/cv2.
+
+## 14. Resume capability
+
+`train.py` now supports `--resume <path-to-ckpt.pt>` to continue training from a saved checkpoint (agent weights + optimizer state + RND running stats + global_step). Use this to extend training beyond the original `--total-timesteps` without losing progress.
+
+## 15. Engineering contributions worth citing
+
+- `AdbMotionEventBackend`: variable-hold touch via stock `input motionevent` (avoided minitouch's multi-display routing bug on Android 12 x86_64 AVD)
+- `_recover_envs` in train.py: crash-proof emulator restart that NEVER raises (replaces gym AsyncVectorEnv's TimeoutExpired-reconstruction bug)
+- Sustained-overlay gate in env.step: distinguishes GAME OVER from OUT OF BOUNDS / END-OF-QUARTER overlays
+- Blank-frame watchdog (180 consecutive empty masks → hard restart)
+- Raw screencap (no PNG): 30% latency reduction
+- Auto-advance taps in env.reset: PLAY/NEXT_QUARTER/REMATCH sequence with multi-frame validation
+- RND (Random Network Distillation) intrinsic motivation, integrated with the shared encoder for OCA/DPR/baseline configs
+
+## TL;DR for the teammate
+
+> 1. **You're playing HOU, not CHI.** Don't trust the team labels — check the computer/player icons in team-select.
+> 2. **Turn OFF SWITCH SIDES + Control All.** Both cause silent reward / action issues.
+> 3. **Snapshot files alone don't transfer** — rsync the qcow2 deltas too.
+> 4. **CUSTOMIZE doesn't persist across force-stops.** Save snapshots IMMEDIATELY after customizing.
+> 5. **Run `diag_actions.py` before training** — verify the action→reward link is non-degenerate.
+> 6. **The autopilot is hardcoded** — opponent doesn't shoot regardless of stats.
+> 7. **PPO won't commit in this env** without intrinsic exploration (RND/ICM) — uniform random is locally optimal.
