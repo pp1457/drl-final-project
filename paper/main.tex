@@ -602,6 +602,93 @@ checkpoints at exit. We believe the per-update mirror + \texttt{EXIT}
 trap is a reusable design for any DRL pipeline that runs on shared
 hardware.
 
+\section{Systems-level variants and capture-latency comparison}
+\label{sec:variants}
+
+In parallel with the controlled OCA/DPR/baseline study reported in
+\S\ref{sec:experiments}, our team also exercised two alternative
+capture pipelines. These are explicitly \emph{not} a controlled
+algorithmic ablation---the variants differ in both observation
+representation and capture backend---but they yield a useful
+systems-level data point on where wall-clock time is actually spent
+in real-Android DRL.
+
+\paragraph{Three pipelines exercised.}
+\begin{description}
+  \item[\textbf{A. adb pixel-frame (used for all 9 runs in
+    \S\ref{sec:experiments})}] Stock \texttt{adb exec-out screencap}
+    producing $84\times 84$ grayscale frames; the main results of
+    this paper use this backend.
+  \item[\textbf{B. adb pixel-frame + env optimisations}] Variant A
+    plus the HSV-based scoreboard ROI reward, multi-frame reset
+    gating, and the per-update recovery trap of
+    \S\ref{sec:orchestration}; this is the pipeline that produced the
+    reported per-step latency budget of \SI{500}{\milli\second}.
+  \item[\textbf{C. host-window capture + YOLO state + PPO+RND}] A
+    parallel prototype by another team member that bypasses
+    \texttt{adb} screencap by grabbing the emulator's host window
+    directly, runs a YOLO object detector on each frame to extract a
+    low-dimensional structured state, reads the scoreboard via OCR,
+    and trains PPO with an RND bonus on the resulting state vector
+    at fixed \SI{320}{\milli\second} control windows.
+\end{description}
+
+\paragraph{Capture-latency comparison.} Table~\ref{tab:syscompare}
+gives measured per-step latencies of the three pipelines.
+
+\begin{table}[h]
+  \caption{Per-step wall-clock latencies of the three capture
+  pipelines. Capture latency excludes neural inference; total
+  per-step includes inference, action injection and any fixed
+  control window. Throughput is averaged over the full run.}
+  \label{tab:syscompare}
+  \centering
+  \small
+  \begin{tabular}{lccc}
+    \toprule
+    \textbf{Variant} & \textbf{Capture latency} & \textbf{Total / step} & \textbf{Throughput} \\
+    \midrule
+    A.\ adb pixel-frame, repo-original   & \SI{655}{\milli\second} & \SI{810}{\milli\second} & 1.2\,steps/s \\
+    B.\ adb pixel-frame + env opts       & \SI{655}{\milli\second} & \SI{500}{\milli\second} & 2.0\,steps/s \\
+    C.\ host capture + YOLO state        & \SI{18.9}{\milli\second}  & \SI{661}{\milli\second} & 1.51\,steps/s \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Variant C's per-frame capture is roughly $35\times$ faster than
+variant A's
+($\SI{18.9}{\milli\second}$ vs $\SI{655}{\milli\second}$).
+End-to-end throughput, however, gains far less: total per-step time
+is dominated by action timing, YOLO inference, game-flow waits and
+the fixed control window, so variant C reaches only
+$\approx 1.5$ steps/s versus variant B's $2.0$ steps/s. The clean
+systems-level conclusion is that on this game, \emph{capture latency
+alone is not the dominant bottleneck once the rest of the inner loop
+is accounted for}---a finding that directly supports the latency
+analysis in \S\ref{sec:limitations}.
+
+\paragraph{Learning quality (qualitative).} Variant C's final policy
+is still weak in absolute terms (4 wins, 58 losses, 1 tie over 63
+evaluation matches). Its in-training trend, however, is consistent
+with the OCA and baseline runs of \S\ref{sec:experiments}: the
+first-20 training matches gave $0$ wins with average score margin
+$-25.3$, the last-20 gave $3$ wins with average margin $-10.0$, and
+the last-10 gave $3$ wins with average margin $-5.3$.  We emphasise
+that these numbers are \emph{not} directly comparable to
+Table~\ref{tab:eval}, because the opponent snapshot, evaluation
+length, observation representation, and control window all differ
+between variants.
+
+\paragraph{What a clean follow-up would look like.} A controlled
+A/B/C comparison would (i) hold the algorithm fixed (e.g.\ baseline
+PPO+RND with the same charge-dim observation), (ii) vary only the
+capture backend among the three pipelines, and (iii) report capture
+latency, total per-step latency, throughput, win rate, average score
+margin, points for/against, and first-vs-last training improvement
+under an identical opponent snapshot and identical
+deterministic/stochastic evaluation protocol. We leave this clean
+comparison to future work.
+
 \section{Limitations and Future Work}
 \label{sec:limitations}
 
@@ -676,55 +763,10 @@ training protocol described in \S\ref{sec:orchestration} handled
 all 13 emulator-level failures and a cluster-wide kill event
 without manual intervention and is released alongside this paper.
 
-\section*{References}
-{\small
-[1] Schulman, J., Wolski, F., Dhariwal, P., Radford, A.\ and Klimov, O.,
-2017. Proximal policy optimization algorithms. \textit{arXiv preprint
-arXiv:1707.06347}.
-
-[2] Schulman, J., Moritz, P., Levine, S., Jordan, M.\ and Abbeel, P.,
-2016. High-dimensional continuous control using generalized advantage
-estimation. In \textit{International Conference on Learning
-Representations (ICLR)}.
-
-[3] Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A.A., Veness, J.,
-Bellemare, M.G., Graves, A., Riedmiller, M., Fidjeland, A.K.,
-Ostrovski, G.\ and Petersen, S., 2015. Human-level control through
-deep reinforcement learning. \textit{Nature}, 518(7540),
-pp.\,529--533.
-
-[4] Jaderberg, M., Mnih, V., Czarnecki, W.M., Schaul, T., Leibo, J.Z.,
-Silver, D.\ and Kavukcuoglu, K., 2017. Reinforcement learning with
-unsupervised auxiliary tasks. In \textit{International Conference on
-Learning Representations (ICLR)}.
-
-[5] Laskin, M., Srinivas, A.\ and Abbeel, P., 2020. CURL: Contrastive
-unsupervised representations for reinforcement learning. In
-\textit{International Conference on Machine Learning (ICML)}.
-
-[6] Burda, Y., Edwards, H., Storkey, A.\ and Klimov, O., 2019.
-Exploration by random network distillation. In \textit{International
-Conference on Learning Representations (ICLR)}.
-
-[7] Pathak, D., Agrawal, P., Efros, A.A.\ and Darrell, T., 2017.
-Curiosity-driven exploration by self-supervised prediction. In
-\textit{International Conference on Machine Learning (ICML)}.
-
-[8] Toyama, D.\ \textit{et al.}, 2021. AndroidEnv: A reinforcement
-learning platform for Android. \textit{arXiv preprint
-arXiv:2105.13231}.
-
-[9] Ferraro, S.\ \textit{et al.}, 2025. FOCUS: object-centric world
-models for robotic manipulation. \textit{Frontiers in Neurorobotics}.
-
-[10] Mosbach, M.\ \textit{et al.}, 2025. Object-centric world models
-from few-shot annotations for sample-efficient reinforcement learning.
-\textit{arXiv preprint arXiv:2501.16443}.
-
-[11] Lyle, C., Rowland, M., Dabney, W., Kwiatkowska, M.\ and Gal, Y.,
-2022. Learning dynamics and generalization in deep reinforcement
-learning. \textit{arXiv preprint arXiv:2204.00565}.
-}
+\small
+\bibliographystyle{plainnat}
+\bibliography{refs}
+\normalsize
 
 \appendix
 
