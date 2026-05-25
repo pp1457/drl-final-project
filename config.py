@@ -119,20 +119,23 @@ VISION = VisionConfig()
 @dataclasses.dataclass(frozen=True)
 class RewardConfig:
     """Pixel-diff reward parameters on the CHI scoreboard region."""
-    # ROI: (y0, y1, x0, x1) in the 2340x1080 frame. The in-game scoreboard
-    # is laid out as: [HOU label/score]  [shot-clock]  [CHI label/score].
-    # CHI panel is RIGHT-side (red bg); HOU panel is LEFT-side (blue bg).
+    # ROI: (y0, y1, x0, x1) in the 2340x1080 frame. Scoreboard layout
+    # (verified on clean_boot_v7+ Q1 gameplay, SWITCH SIDES=OFF):
+    #   [CHI label/score on RED panel]  [Q1 + shot clock]  [HOU label/score on BLUE panel]
+    # CHI digit centroid measured at (1026:1055, 314:340).
+    # HOU digit centroid measured at (1276:1305, 314:340).
     #
-    # Bug-fix 2026-05-23: previous values had CHI and HOU swapped — `chi`
-    # pointed at HOU's score, `hou` pointed at the blue side-bar (no digits).
-    # That made HOU's points get counted as CHI's, opponent_score_weight
-    # never fired, and ret was just "how often HOU scores" with the wrong
-    # sign. Visually re-measured from a Q4 gameplay frame.
-    chi_score_roi: tuple[int, int, int, int] = (320, 380, 1240, 1360)
-    hou_score_roi: tuple[int, int, int, int] = (320, 380, 980, 1100)
+    # Naming: `chi_score_roi` is the +1 ROI in ScoreboardDiffReward (treated
+    # as the agent's team), and `hou_score_roi` is the opponent ROI (-1).
+    # 2026-05-24 fix: we are HOU (HOME team, the PLAYER pedestal); CHI is the
+    # CPU opponent. Therefore the +1 ROI must capture HOU's digits and the -1
+    # ROI must capture CHI's. Values below swap the panel locations so the
+    # variable named `chi_score_roi` actually points at the HOU (blue) panel,
+    # and vice versa. Reward semantics: positive ret = our HOU team scoring.
+    chi_score_roi: tuple[int, int, int, int] = (305, 345, 1250, 1340)  # HOU panel (ours, +1)
+    hou_score_roi: tuple[int, int, int, int] = (305, 345, 1000, 1090)  # CHI panel (opponent, -1)
 
-    # Re-tuned 2026-05-23 after ROI fix. Tight digit-only crops (excluding the
-    # static CHI/HOU labels) produce mean-abs-diff ~0-3 idle and ~10-40 on a
+    # Tight digit-only crops produce mean-abs-diff ~0-3 idle and ~10-40 on a
     # score change. Threshold 10 catches the smaller score changes while
     # tolerating the ~3-frame ambient flicker.
     diff_threshold: float = 10.0
@@ -157,9 +160,11 @@ REWARD = RewardConfig()
 class ActionsConfig:
     """Touch coordinates and timings for AdbBackend.
 
-    Bouncy Basketball is one-button: tap-anywhere works, but we send taps to
-    the same on-screen spot for consistency (where the in-game tutorial
-    hand-cursor sits during the first match).
+    With Control All OFF (clean_boot_v7), Bouncy Basketball uses tap-anywhere
+    semantics: the active player (whoever has the ball) jumps. The in-game
+    tutorial hand-cursor sits at (1900, 860) pointing into the play area —
+    a clean UI-element-free spot inside the court that registers as the
+    active player's jump/shoot.
     """
     press_coord: tuple[int, int] = (1900, 860)
 
@@ -186,7 +191,10 @@ class EmulatorConfig:
 
     # Snapshot pool — each reset picks one uniformly. Add more by capturing
     # additional CHI vs <team> matchups (see Task #14).
-    snapshot_pool: tuple[str, ...] = ("clean_boot", "clean_boot_lac")
+    # 2026-05-24: clean_boot_v8 has v7's settings PLUS CUSTOMIZE: both CHI
+    # (opponent) and HOU (us) maxed at 32/32 + 32/32 — balanced strong-vs-strong
+    # game so PPO has a real challenge and configs can differentiate.
+    snapshot_pool: tuple[str, ...] = ("clean_boot_v8",)
 
     # Base console port for our emulators. Console port = base + 2*rank, adb
     # port = console + 1. Set EMU_BASE_PORT in the env to override (defaults

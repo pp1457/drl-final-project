@@ -7,12 +7,12 @@ from orchestrate import EmulatorEndpoint
 from reward import ScoreboardDiffReward
 
 ep = EmulatorEndpoint(adb_serial="emulator-6558", minicap_port=0, minitouch_port=0,
-                     snapshot_names=("clean_boot","clean_boot_lac"))
+                     snapshot_names=("clean_boot_v6",))
 
 def run_trial(label, action_fn, N=200):
     b = AdbMotionEventBackend(ep)
     b.setup()
-    b.load_snapshot("clean_boot")
+    b.load_snapshot("clean_boot_v6")
     time.sleep(3)
     # Advance to gameplay
     for _ in range(2):

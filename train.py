@@ -97,6 +97,28 @@ class Args:
     log_dir: str = "runs"
     ckpt_dir: str = "checkpoints"
     ckpt_every: int = 50          # save every N updates
+    # ---- Random Network Distillation (intrinsic motivation) ------------
+    # When use_rnd=True, train a small predictor network to match a frozen
+    # random target. Intrinsic reward per step = MSE between predictor and
+    # target features, normalized by running std. Helps PPO commit to a
+    # non-uniform policy when extrinsic reward is too sparse to provide a
+    # gradient (the v8 failure mode).
+    use_rnd: bool = False
+    rnd_coef: float = 0.5         # weight of intrinsic reward in total reward
+    rnd_loss_coef: float = 1.0    # weight of predictor MSE in total loss
+    # ---- Charge-duration as extra obs dim -------------------------------
+    # When use_charge_dim=True, concat info["charge_duration"]/30.0 (~[0,1])
+    # to the encoder output before actor/critic heads. Lets the policy
+    # condition on its own held-press history (Bouncy Basketball's charge
+    # mechanic accumulates 1-25 hold-steps for shot power; the 4-frame stack
+    # alone gives ~130ms history which is insufficient for charge timing).
+    use_charge_dim: bool = False
+    # ---- Resume training from checkpoint --------------------------------
+    # Path to a checkpoint file saved by a prior run. Loads agent weights,
+    # optimizer state, RND running stats, and continues from the saved
+    # global_step. Used to extend training beyond the original
+    # total_timesteps without throwing away learned progress.
+    resume: str = ""
     wandb: bool = False
     wandb_project: str = "drl-final-bouncy"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -265,13 +287,45 @@ class DPRDecoder(nn.Module):
         return x[:, :, 1:85, 1:85]
 
 
+class RNDNet(nn.Module):
+    """Small CNN+MLP for RND target (frozen random) and predictor (trained).
+    Both share architecture; target weights are frozen at init."""
+    def __init__(self, frame_stack: int, latent_dim: int = 128):
+        super().__init__()
+        self.net = nn.Sequential(
+            _layer_init(nn.Conv2d(frame_stack, 32, kernel_size=8, stride=4)),
+            nn.ELU(),
+            _layer_init(nn.Conv2d(32, 64, kernel_size=4, stride=2)),
+            nn.ELU(),
+            _layer_init(nn.Conv2d(64, 64, kernel_size=3, stride=1)),
+            nn.ELU(),
+            nn.Flatten(),
+            _layer_init(nn.Linear(64 * 7 * 7, latent_dim)),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x / 255.0)
+
+
 class Agent(nn.Module):
-    def __init__(self, frame_stack: int, n_actions: int, aux_mode: str):
+    def __init__(self, frame_stack: int, n_actions: int, aux_mode: str,
+                 use_rnd: bool = False, use_charge_dim: bool = False):
         super().__init__()
         self.encoder = NatureCNN(frame_stack)
-        self.actor = _layer_init(nn.Linear(512, n_actions), std=0.01)
-        self.critic = _layer_init(nn.Linear(512, 1), std=1.0)
+        self.use_charge_dim = use_charge_dim
+        # When use_charge_dim=True, the actor/critic see [encoder_features (512), charge_dur (1)]
+        # = 513-dim input. Aux head still uses raw 512-dim encoder output (the
+        # aux task is about visual features, charge state is a policy-side input).
+        head_in_dim = 512 + (1 if use_charge_dim else 0)
+        self.actor = _layer_init(nn.Linear(head_in_dim, n_actions), std=0.01)
+        self.critic = _layer_init(nn.Linear(head_in_dim, 1), std=1.0)
         self.aux_mode = aux_mode
+        self.use_rnd = use_rnd
+        if use_rnd:
+            self.rnd_target = RNDNet(frame_stack)
+            self.rnd_predictor = RNDNet(frame_stack)
+            for p in self.rnd_target.parameters():
+                p.requires_grad_(False)
         if aux_mode == "oca":
             self.aux_head: nn.Module = nn.Sequential(
                 _layer_init(nn.Linear(512, MODEL.oca_hidden_dim)),
@@ -288,18 +342,30 @@ class Agent(nn.Module):
     def encode(self, obs: torch.Tensor) -> torch.Tensor:
         return self.encoder(obs)
 
-    def get_value(self, obs: torch.Tensor) -> torch.Tensor:
-        return self.critic(self.encode(obs))
+    def _head_input(self, z: torch.Tensor, charge_dur: torch.Tensor | None) -> torch.Tensor:
+        """Concatenate the optional charge_dur input to encoder features for
+        actor/critic. Normalize charge_dur by /30 so 0..30 charge maps to ~[0,1]
+        (the charge cap in the in-game shot mechanic)."""
+        if self.use_charge_dim:
+            if charge_dur is None:
+                charge_dur = torch.zeros(z.shape[0], 1, device=z.device)
+            return torch.cat([z, charge_dur.view(-1, 1) / 30.0], dim=-1)
+        return z
+
+    def get_value(self, obs: torch.Tensor, charge_dur: torch.Tensor | None = None) -> torch.Tensor:
+        return self.critic(self._head_input(self.encode(obs), charge_dur))
 
     def get_action_and_value(
-        self, obs: torch.Tensor, action: torch.Tensor | None = None
+        self, obs: torch.Tensor, action: torch.Tensor | None = None,
+        charge_dur: torch.Tensor | None = None,
     ):
         z = self.encode(obs)
-        logits = self.actor(z)
+        h = self._head_input(z, charge_dur)
+        logits = self.actor(h)
         dist = Categorical(logits=logits)
         if action is None:
             action = dist.sample()
-        return action, dist.log_prob(action), dist.entropy(), self.critic(z), z
+        return action, dist.log_prob(action), dist.entropy(), self.critic(h), z
 
     def aux_predict(self, z: torch.Tensor) -> torch.Tensor:
         if self.aux_mode == "baseline":
@@ -370,8 +436,34 @@ def main():
     n_actions = int(envs.single_action_space.n)
     assert n_actions == N_ACTIONS, (n_actions, N_ACTIONS)
 
-    agent = Agent(args.frame_stack, n_actions, args.aux_mode).to(device)
+    agent = Agent(
+        args.frame_stack, n_actions, args.aux_mode,
+        use_rnd=args.use_rnd, use_charge_dim=args.use_charge_dim,
+    ).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
+
+    # RND intrinsic-reward running stats: normalize intrinsic rewards by
+    # their std over time (per the RND paper). Initialize lazily.
+    rnd_running_mean = torch.tensor(0.0, device=device)
+    rnd_running_var = torch.tensor(1.0, device=device)
+    rnd_running_count = 1e-4
+
+    # Resume from checkpoint: restores agent + optimizer + RND stats so a
+    # training run can continue from where a prior run stopped. global_step
+    # is also restored so PPO updates / global_step accounting stays correct.
+    resume_from_step = 0
+    if args.resume:
+        print(f"Resuming from checkpoint: {args.resume}", flush=True)
+        ckpt = torch.load(args.resume, map_location=device)
+        agent.load_state_dict(ckpt["agent"])
+        if "optimizer" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer"])
+        if "rnd_running_mean" in ckpt:
+            rnd_running_mean = ckpt["rnd_running_mean"].to(device)
+            rnd_running_var = ckpt["rnd_running_var"].to(device)
+            rnd_running_count = ckpt.get("rnd_running_count", 1e-4)
+        resume_from_step = ckpt.get("global_step", 0)
+        print(f"Resumed at global_step={resume_from_step}, update={ckpt.get('update', 0)}", flush=True)
 
     # FrameStack returns shape (k, H, W, 1); permute to (k, H, W) for the CNN
     def to_chw(o):
@@ -388,11 +480,17 @@ def main():
     oca_target_buf = torch.zeros((args.num_steps, args.num_envs, OCA_DIM), device=device)
     oca_mask_buf = torch.zeros((args.num_steps, args.num_envs, OCA_DIM), device=device)
     next_obs_buf = torch.zeros((args.num_steps, args.num_envs) + obs_shape, dtype=torch.uint8, device=device)
+    # Charge-duration tracking: shape (num_steps, num_envs). Each env tracks
+    # consecutive PRESS-step count; provided to agent.get_action_and_value
+    # when use_charge_dim=True. Tracked as a separate tensor so it's easy to
+    # plumb through rollout, buffer, and PPO update without touching the obs.
+    charge_buf = torch.zeros((args.num_steps, args.num_envs), dtype=torch.float32, device=device)
+    next_charge = torch.zeros(args.num_envs, dtype=torch.float32, device=device)
 
     ckpt_path = os.path.join(args.ckpt_dir, run_name)
     os.makedirs(ckpt_path, exist_ok=True)
 
-    global_step = 0
+    global_step = resume_from_step
     start_time = time.time()
     next_obs, info = envs.reset(seed=args.seed)
     next_obs = to_chw(next_obs)
@@ -508,8 +606,12 @@ def main():
                 global_step += args.num_envs
                 obs_buf[step] = next_obs
                 dones_buf[step] = next_done
+                charge_buf[step] = next_charge
                 with torch.no_grad():
-                    action, logprob, _, value, _ = agent.get_action_and_value(next_obs.float())
+                    action, logprob, _, value, _ = agent.get_action_and_value(
+                        next_obs.float(),
+                        charge_dur=next_charge if args.use_charge_dim else None,
+                    )
                     values_buf[step] = value.flatten()
                 actions_buf[step] = action
                 logprobs_buf[step] = logprob
@@ -520,6 +622,34 @@ def main():
                 next_obs = to_chw(next_obs_np)
                 next_done = torch.as_tensor(done, dtype=torch.float32, device=device)
                 next_obs_buf[step] = next_obs
+                # Pull charge_duration for the NEXT step from this step's info.
+                # If info doesn't have it (e.g., fake env, no charge tracking),
+                # fall back to in-Python computation from this step's action.
+                if "charge_duration" in info:
+                    next_charge = torch.as_tensor(
+                        np.asarray(info["charge_duration"], dtype=np.float32),
+                        device=device,
+                    )
+                else:
+                    a_t = action.float()
+                    next_charge = (next_charge + a_t) * a_t  # +1 if PRESS, 0 if NO_PRESS
+
+                # RND intrinsic reward — predictor's distance from the frozen
+                # target tells us how "novel" this observation is. Added to
+                # the extrinsic reward to break the uniform-random equilibrium
+                # when extrinsic gradient is near zero (the v8 failure mode).
+                if args.use_rnd:
+                    with torch.no_grad():
+                        tgt = agent.rnd_target(next_obs.float())
+                        prd = agent.rnd_predictor(next_obs.float())
+                        intrinsic = ((prd - tgt) ** 2).mean(dim=-1)
+                        # Normalize by running std for stable scale
+                        rnd_running_count += float(args.num_envs)
+                        delta = intrinsic.mean() - rnd_running_mean
+                        rnd_running_mean = rnd_running_mean + delta * args.num_envs / rnd_running_count
+                        rnd_running_var = rnd_running_var * 0.99 + intrinsic.var() * 0.01
+                        intrinsic_norm = intrinsic / (rnd_running_var.sqrt() + 1e-8)
+                        rewards_buf[step] = rewards_buf[step] + args.rnd_coef * intrinsic_norm
 
                 # OCA targets come from the *next* step's info (target_{t+1})
                 if "oca_target" in info:
@@ -543,7 +673,10 @@ def main():
 
         # Bootstrap value at the end of the rollout
         with torch.no_grad():
-            next_value = agent.get_value(next_obs.float()).reshape(1, -1)
+            next_value = agent.get_value(
+                next_obs.float(),
+                charge_dur=next_charge if args.use_charge_dim else None,
+            ).reshape(1, -1)
             advantages = torch.zeros_like(rewards_buf)
             lastgaelam = 0
             for t in reversed(range(args.num_steps)):
@@ -584,6 +717,7 @@ def main():
         b_values = values_buf.reshape(-1)
         b_oca_target = oca_target_buf.reshape(-1, OCA_DIM)
         b_oca_mask = oca_mask_buf.reshape(-1, OCA_DIM)
+        b_charge = charge_buf.reshape(-1)
 
         idx = np.arange(batch_size)
         clipfracs = []
@@ -592,7 +726,8 @@ def main():
             for start in range(0, batch_size, minibatch_size):
                 mb = idx[start : start + minibatch_size]
                 _, newlogprob, entropy, newvalue, z_t = agent.get_action_and_value(
-                    b_obs[mb].float(), b_actions[mb]
+                    b_obs[mb].float(), b_actions[mb],
+                    charge_dur=b_charge[mb] if args.use_charge_dim else None,
                 )
                 logratio = newlogprob - b_logprobs[mb]
                 ratio = logratio.exp()
@@ -619,7 +754,24 @@ def main():
                     b_oca_mask[mb],
                 )
 
-                loss = pg_loss - args.ent_coef * ent_loss + args.vf_coef * v_loss + args.aux_coef * aux_loss
+                # RND predictor loss: train predictor to match the frozen
+                # random target. As predictor improves on visited states,
+                # the intrinsic reward shrinks there, pushing exploration to
+                # novel states.
+                rnd_loss = torch.tensor(0.0, device=device)
+                if args.use_rnd:
+                    with torch.no_grad():
+                        rnd_tgt = agent.rnd_target(b_obs[mb].float())
+                    rnd_prd = agent.rnd_predictor(b_obs[mb].float())
+                    rnd_loss = ((rnd_prd - rnd_tgt) ** 2).mean()
+
+                loss = (
+                    pg_loss
+                    - args.ent_coef * ent_loss
+                    + args.vf_coef * v_loss
+                    + args.aux_coef * aux_loss
+                    + args.rnd_loss_coef * rnd_loss
+                )
 
                 optimizer.zero_grad()
                 loss.backward()
@@ -638,16 +790,20 @@ def main():
         writer.add_scalar("losses/value_loss", v_loss.item(), global_step)
         writer.add_scalar("losses/entropy", ent_loss.item(), global_step)
         writer.add_scalar("losses/aux_loss", aux_loss.item(), global_step)
+        if args.use_rnd:
+            writer.add_scalar("losses/rnd_loss", rnd_loss.item(), global_step)
+            writer.add_scalar("charts/rnd_running_std", rnd_running_var.sqrt().item(), global_step)
         writer.add_scalar("charts/clipfrac", float(np.mean(clipfracs)), global_step)
         writer.add_scalar("charts/learning_rate", optimizer.param_groups[0]["lr"], global_step)
         writer.add_scalar("charts/frame_health_any_detected", mask_any_detected, global_step)
         writer.add_scalar("charts/frame_health_components_mean", mask_mean_components, global_step)
         if ep_returns:
             writer.add_scalar("charts/episode_return_mean", float(np.mean(ep_returns)), global_step)
+        rnd_msg = f" rnd {rnd_loss.item():.4f}" if args.use_rnd else ""
         print(
             f"upd {update}/{num_updates} step {global_step} sps {sps} "
             f"pg {pg_loss.item():.3f} v {v_loss.item():.3f} "
-            f"ent {ent_loss.item():.3f} aux {aux_loss.item():.4f} "
+            f"ent {ent_loss.item():.3f} aux {aux_loss.item():.4f}{rnd_msg} "
             f"ret {np.mean(ep_returns) if ep_returns else float('nan'):.2f} "
             f"fh {mask_any_detected:.2f}/{mask_mean_components:.1f}"
         )
@@ -656,9 +812,13 @@ def main():
             torch.save(
                 {
                     "agent": agent.state_dict(),
+                    "optimizer": optimizer.state_dict(),
                     "args": vars(args),
                     "global_step": global_step,
                     "update": update,
+                    "rnd_running_mean": rnd_running_mean.cpu(),
+                    "rnd_running_var": rnd_running_var.cpu(),
+                    "rnd_running_count": rnd_running_count,
                 },
                 os.path.join(ckpt_path, f"step_{global_step}.pt"),
             )

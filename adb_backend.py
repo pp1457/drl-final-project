@@ -65,14 +65,34 @@ class AdbBackend(EmulatorBackend):
     def grab_frame(self) -> np.ndarray:
         """Returns RGB ndarray of shape (H, W, 3), dtype uint8.
 
-        `adb exec-out screencap -p` writes a PNG to stdout. Latency: 30-80ms.
+        Uses RAW screencap (no `-p`): the device skips PNG encoding entirely
+        and writes a 16-byte framebuffer header + raw RGBA pixel bytes. Saves
+        ~200 ms/step vs the PNG path on the 2340x1080 Pixel 5 emulator (650
+        ms → 450 ms on contended hosts, 300 ms → 100 ms idle).
+
+        Header (Android Q+, our emulator is API 31):
+          [0:4]   width  (uint32 LE)
+          [4:8]   height (uint32 LE)
+          [8:12]  pixel format (1 = HAL_PIXEL_FORMAT_RGBA_8888)
+          [12:16] colorspace
+          [16:]   width*height*4 bytes of RGBA pixel data
         """
-        png_bytes = _adb(self.endpoint.adb_serial, "exec-out", "screencap", "-p")
-        arr = np.frombuffer(png_bytes, dtype=np.uint8)
-        bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if bgr is None:
-            raise RuntimeError(f"failed to decode screencap PNG from {self.endpoint.adb_serial}")
-        return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        raw = _adb(self.endpoint.adb_serial, "exec-out", "screencap")
+        if len(raw) < 16:
+            raise RuntimeError(
+                f"screencap from {self.endpoint.adb_serial}: only {len(raw)} bytes, "
+                f"expected at least 16 (header)"
+            )
+        w = int.from_bytes(raw[0:4], "little")
+        h = int.from_bytes(raw[4:8], "little")
+        expected = 16 + w * h * 4
+        if len(raw) < expected:
+            raise RuntimeError(
+                f"screencap from {self.endpoint.adb_serial}: got {len(raw)} bytes, "
+                f"expected {expected} for {w}x{h} RGBA"
+            )
+        arr = np.frombuffer(raw[16:16 + w * h * 4], dtype=np.uint8).reshape(h, w, 4)
+        return arr[:, :, :3]  # drop alpha, RGBA -> RGB
 
     # ---- action injection ---------------------------------------------
     def send_action(self, action: int, hold_ms: int = PRESS_FRAME_MS) -> None:

@@ -29,19 +29,26 @@ from env import N_ACTIONS, OBS_H, OBS_W, BouncyBasketballEnv
 from train import Agent, make_env_fn
 
 
-def _make_bouncy_env_for_serial(serial: str, backend_name: str, frame_skip: int):
+def _make_bouncy_env_for_serial(serial: str, backend_name: str, frame_skip: int,
+                                max_episode_steps: int = 0):
     """Build a Bouncy env that connects to an explicit adb serial — bypasses
     orchestrate's endpoints.json so we can eval on a side emulator while the
-    training farm holds the main ports."""
+    training farm holds the main ports.
+
+    max_episode_steps: 0 = use env default (1024); >0 caps episodes earlier.
+    Useful for eval to shorten per-episode wall-time (each step is ~500ms
+    of adb overhead, so 1024-step episodes = 8 min).
+    """
     from adb_backend import AdbBackend, AdbMotionEventBackend
     from orchestrate import EmulatorEndpoint
     from reward import ScoreboardDiffReward
     from vision import detect_pose
+    from config import EMU
     endpoint = EmulatorEndpoint(
         adb_serial=serial,
         minicap_port=0,
         minitouch_port=0,
-        snapshot_names=("clean_boot", "clean_boot_lac"),
+        snapshot_names=list(EMU.snapshot_pool),
     )
     if backend_name == "adb-motionevent":
         backend = AdbMotionEventBackend(endpoint)
@@ -56,6 +63,8 @@ def _make_bouncy_env_for_serial(serial: str, backend_name: str, frame_skip: int)
     }
     if frame_skip > 0:
         env_kwargs["frame_skip"] = frame_skip
+    if max_episode_steps > 0:
+        env_kwargs["max_episode_steps"] = max_episode_steps
     env = BouncyBasketballEnv(**env_kwargs)
     env._reward_state = reward_extractor
     return env
@@ -92,7 +101,14 @@ class EvalResult:
 def load_agent(checkpoint_path: str, device: torch.device) -> tuple[Agent, dict]:
     ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
     args = ckpt["args"]
-    agent = Agent(args["frame_stack"], N_ACTIONS, args["aux_mode"]).to(device)
+    # Reconstruct Agent with the SAME flags it was trained with so the
+    # state_dict matches (RND adds rnd_target/rnd_predictor submodules;
+    # charge_dim changes actor/critic input size).
+    agent = Agent(
+        args["frame_stack"], N_ACTIONS, args["aux_mode"],
+        use_rnd=args.get("use_rnd", False),
+        use_charge_dim=args.get("use_charge_dim", False),
+    ).to(device)
     agent.load_state_dict(ckpt["agent"])
     agent.eval()
     return agent, args
@@ -109,18 +125,28 @@ def rollout_episodes(
 ) -> EvalResult:
     returns: list[float] = []
     lengths: list[int] = []
+    use_charge = bool(getattr(agent, "use_charge_dim", False))
     for ep in range(n_episodes):
-        obs, _info = env.reset(seed=seed + ep)
+        obs, info = env.reset(seed=seed + ep)
         ep_return = 0.0
         ep_len = 0
+        charge_dur = 0.0
         while True:
             o = torch.as_tensor(np.asarray(obs), device=device).squeeze(-1).unsqueeze(0).float()
-            logits = agent.actor(agent.encode(o))
+            z = agent.encode(o)
+            if use_charge:
+                cd = torch.tensor([[charge_dur]], device=device, dtype=torch.float32)
+                h = agent._head_input(z, cd)
+            else:
+                h = z
+            logits = agent.actor(h)
             if deterministic:
                 action = int(logits.argmax(-1).item())
             else:
                 action = int(torch.distributions.Categorical(logits=logits).sample().item())
-            obs, r, term, trunc, _info = env.step(action)
+            obs, r, term, trunc, info = env.step(action)
+            if use_charge and isinstance(info, dict) and "charge_duration" in info:
+                charge_dur = float(info["charge_duration"])
             ep_return += float(r)
             ep_len += 1
             if term or trunc:
@@ -155,6 +181,13 @@ def main():
              "serial (e.g. emulator-6558). Used when eval'ing on a side emulator "
              "while training holds the main farm.",
     )
+    ap.add_argument(
+        "--max-episode-steps",
+        type=int,
+        default=0,
+        help="If >0, override max_episode_steps. Each step is ~500ms wall time, "
+             "so 256 ≈ ~2 min/episode (~1 quarter), 1024 ≈ ~8 min/episode (env default).",
+    )
     args = ap.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -168,6 +201,7 @@ def main():
     if args.env_id == "bouncy" and args.serial:
         env = _make_bouncy_env_for_serial(
             args.serial, backend_name=backend, frame_skip=frame_skip,
+            max_episode_steps=args.max_episode_steps,
         )
         # Wrap with the same observation transforms make_env_fn applies so the
         # checkpoint's tensors line up.

@@ -235,6 +235,12 @@ class BouncyBasketballEnv(gym.Env):
         self._blank_streak = 0
         self._overlay_streak = 0
         self._advance_attempted = False
+        # Charge-duration tracker: counts consecutive PRESS actions. Reset to
+        # 0 when the agent issues NO_PRESS. Exposed in info["charge_duration"]
+        # so the policy can condition on its own held-press history (the
+        # in-game charge mechanic accumulates over the hold; without this the
+        # agent has to infer hold state from the 4-frame stack alone).
+        self._press_steps = 0
         # Advance from whatever screen the snapshot landed on into active play.
         # Strategy: tap the three known "go" buttons (PLAY, NEXT QUARTER,
         # REMATCH), then POLL until we see a gameplay frame (=at least one
@@ -333,6 +339,12 @@ class BouncyBasketballEnv(gym.Env):
             self.backend.send_action(int(action), hold_ms=hold_ms)
         except TypeError:
             self.backend.send_action(int(action))
+        # Update charge counter BEFORE reading the frame so info reflects the
+        # state PPO should be conditioning on for the NEXT action.
+        if int(action) == 1:  # PRESS
+            self._press_steps += 1
+        else:
+            self._press_steps = 0
         rgb = self.backend.grab_frame()
         score, episode_done = self.reward_extractor(rgb)
         # Sustained-overlay gate. The reward extractor's `done` fires on any
@@ -417,6 +429,7 @@ class BouncyBasketballEnv(gym.Env):
             "oca_mask": mask,
             "raw_score": self._raw_score,
             "score_delta": score_delta,
+            "charge_duration": float(self._press_steps),
         }
 
 
