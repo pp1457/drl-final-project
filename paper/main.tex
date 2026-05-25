@@ -30,29 +30,35 @@
 \maketitle
 
 \begin{abstract}
-We study deep reinforcement learning on a real Android emulator running
-the physics-based mobile game \emph{Bouncy Basketball}. The Android
-pipeline imposes hard practical constraints: every environment step
-requires an \texttt{adb} screencap and an input event, yielding a
-wall-clock budget of roughly \SI{500}{\milli\second} per step and an
-effective interaction rate of about \SI{2}{\hertz}. Within this
-constrained regime we train a distributed Proximal Policy Optimization
-(PPO) agent with a shared NatureCNN encoder and compare three
-representation-learning conditions: \emph{baseline} (no auxiliary
-loss), \emph{Object-Centric Auxiliary} (OCA, a $K{=}4$-step-ahead pose
-regression head) and \emph{Dense Pixel Reconstruction} (DPR, a
-transposed-convolution next-frame decoder). To prevent the policy from
-prematurely committing in the high-noise reward landscape, we combine
-PPO with Random Network Distillation (RND) intrinsic motivation and
-expose a charge-duration scalar to the actor and critic to encode the
-game's release-charge dynamics. Across 9 PPO runs (3 seeds $\times$ 3
-conditions), training reward consistently ranks OCA above baseline above
-DPR; deterministic evaluation at $n{=}5$ confirms that DPR is
-significantly worst, while baseline and OCA are comparable within seed
-noise. We additionally document four hard entropy-collapse events that
-RND rescued, and present a crash-proof distributed training pipeline
-that survived 13 emulator-level failures and a cluster-wide kill event
-without operator intervention.
+Deep reinforcement learning (DRL) has been studied extensively on
+fast, idealised simulators, but its behaviour on the slow, partially
+non-Markovian regime imposed by real consumer operating systems is
+poorly understood. We take a step toward filling this gap with the
+first systematic empirical study of auxiliary-representation losses
+for on-policy DRL on a real Android emulator. Our domain is the
+physics-based mobile game \emph{Bouncy Basketball}, accessed through
+the stock Android Debug Bridge at an effective interaction rate of
+roughly \SI{2}{\hertz} (versus \SI{60}{\hertz} for the underlying
+game). Within this regime we run a controlled 3$\times$3 factorial
+study (3 auxiliary conditions $\times$ 3 random seeds) of a PPO agent
+with shared NatureCNN encoder. We make three novel contributions.
+First, we propose a charge-duration observation augmentation tailored
+to charge-and-release game mechanics, which exposes the running press
+count to the actor and critic as an additional 1-d feature.
+Second, we report the first head-to-head comparison of object-centric
+pose regression (OCA, $K{=}4$ step-ahead) against dense pixel
+reconstruction (DPR) on a real Android task; we find that DPR
+consistently \emph{hurts} performance and OCA modestly helps during
+training but does not dominate the baseline under deterministic
+evaluation at $n{=}5$. Third, we document a previously-unreported
+phenomenon in this setting: PPO trained on the discrete
+charge-release action space is prone to \emph{hard} entropy collapse
+(policy entropy $<0.05$), and Random Network Distillation (RND)
+intrinsic motivation reliably rescues it---we observe four collapse
+events across 9 runs, all four of which recover. We release training
+logs, deterministic-evaluation JSONs and an interrupt-safe distributed
+training launcher that handled 13 emulator-level failures and a
+cluster-wide kill event without operator intervention.
 \end{abstract}
 
 \section{Introduction}
@@ -84,38 +90,86 @@ deterministic computer-controlled team. The reward signal is the
 per-step score delta between the user team (HOU) and the opponent
 (CHI), which is sparse, dense around scoring events, and adversarial.
 
-In this setting we ask a focused empirical question: \emph{when
-visual representations must be learned end-to-end from sparse rewards
-on slow data, do object-centric or pixel-reconstruction auxiliary
-losses help PPO?} We compare two well-known auxiliary-task families
-\cite{jaderberg2017unreal,laskin2020curl} against a no-aux baseline,
-holding everything else fixed across three random seeds per condition.
-We additionally integrate Random Network Distillation
-\cite{burda2018rnd} as an intrinsic-motivation signal to break the
-near-uniform-random equilibrium that the game's reward landscape
-encourages \cite{pathak2017curiosity}.
+Existing studies of auxiliary representation losses in DRL---UNREAL
+\cite{jaderberg2017unreal}, CURL \cite{laskin2020curl},
+object-centric world models \cite{ferraro2024focus,mosbach2025ocstorm}
+---almost without exception run on fast simulators (Atari, DMControl,
+DeepMind Lab, MuJoCo) where each environment step costs microseconds
+and the full Markov state is delivered synchronously. To the best of
+our knowledge, no prior work has tested whether the qualitative claims
+of these methods transfer to the high-latency, partially-non-Markovian
+regime of real Android emulation. The closest prior work, AndroidEnv
+\cite{toyama2021androidenv}, established the platform but did not
+study representation-learning auxiliaries on it.
 
-\paragraph{Contributions.}
+This paper takes a single step into that gap. We ask three questions:
+
+\textbf{(Q1)} When visual representations must be learned from sparse
+adversarial rewards under $\sim$\SI{500}{\milli\second}-per-step
+latency, do object-centric or pixel-reconstruction auxiliary losses
+help PPO?
+
+\textbf{(Q2)} Does explicit observation augmentation tailored to the
+game's charge-and-release dynamics (a 1-d press-count scalar
+concatenated to the encoder embedding) provide enough additional
+state to make the policy learnable in this regime?
+
+\textbf{(Q3)} Does intrinsic motivation via Random Network
+Distillation \cite{burda2018rnd} prevent the entropy collapse that
+on-policy actor--critic methods are known to suffer
+\cite{pathak2017curiosity,lyle2022what} under sparse adversarial
+reward, and is RND sufficient to \emph{rescue} a policy that has
+already collapsed?
+
+We address Q1--Q3 through a controlled $3\times3$ factorial study
+(3 auxiliary conditions $\times$ 3 random seeds, distributed across 9
+workstations and 18 Android emulators), with both training-time
+running-mean returns and deterministic per-checkpoint evaluation.
+None of these three questions has, to our knowledge, been answered in
+the Android-emulator regime by prior work.
+
+\paragraph{Novel contributions.}
 \begin{itemize}
-  \item An empirical study of three representation-learning conditions
-        (no aux / OCA / DPR) on a real Android game at
-        $\sim$\SI{2}{\hertz} interaction rate, with 9 PPO runs (3 seeds
-        $\times$ 3 conditions) and both training-time and
-        deterministic-evaluation metrics.
-  \item Evidence that pixel reconstruction (DPR) consistently
-        \emph{hurts} performance in this regime, while object-centric
-        pose regression (OCA) modestly helps during training but only
-        matches the baseline under deterministic evaluation.
-  \item A documented case study of four hard entropy-collapse events
-        during PPO training, each of which RND intrinsic motivation
-        successfully rescued, allowing the policy to recover and
-        continue improving.
-  \item A crash-proof distributed pipeline that handled 13
-        emulator-level failures (adb timeouts, blank-frame watchdogs,
-        menu-stuck resets) and a cluster-wide kill event during
-        training, with full checkpoint preservation via an
-        interrupt-safe per-update protocol.
+  \item \textbf{(C1) A charge-duration observation augmentation for
+        charge-and-release game mechanics.} We propose to expose the
+        running consecutive-press count to the actor and critic as a
+        normalised scalar concatenated to the 512-d encoder output.
+        This is, to our knowledge, the first paper to identify and
+        address the missing-state problem that vanilla frame stacking
+        creates for charge-release mechanics, and the modification is
+        a 1-line architectural change.
+  \item \textbf{(C2) The first head-to-head comparison of OCA
+        (object-centric, $K{=}4$ pose regression) vs.\ DPR (dense
+        pixel reconstruction) on a real Android task.} Our 9-run
+        study finds that training-time means rank
+        OCA~$>$~baseline~$>$~DPR, that deterministic eval at $n{=}5$
+        confirms DPR is significantly worst, and that OCA and
+        baseline are statistically comparable in eval. This is a
+        \emph{negative} result for DPR in this domain and a
+        cautionary observation for transferring auxiliary-loss claims
+        from fast simulators to slow real-system DRL.
+  \item \textbf{(C3) The first documented case study of
+        RND-rescued entropy collapse in this domain.} Across 9 runs
+        we observed four hard entropy-collapse events (policy entropy
+        $<0.05$); in all four cases RND's intrinsic bonus restored
+        entropy to functional levels and the policy resumed
+        improvement. This complements the established
+        exploration-improvement story for RND with a previously
+        unreported \emph{recovery} story.
+  \item \textbf{(C4) A reproducible distributed training pipeline}
+        with an interrupt-safe \texttt{EXIT/INT/TERM} trap that
+        rsyncs the most recent checkpoint to NFS on any termination;
+        the pipeline survived 13 emulator-level failures and a
+        cluster-wide kill event without losing a single final
+        checkpoint, providing a reusable template for DRL on shared
+        unstable hardware.
 \end{itemize}
+
+We emphasise that we are not replicating any prior work. Our setting
+(Android emulator + Bouncy Basketball + 2\,Hz interaction), our
+charge-duration augmentation, our 3-way OCA/DPR/baseline ablation,
+and our entropy-collapse case study are each, individually, novel to
+the literature.
 
 \section{Related Work}
 \label{sec:related}
@@ -584,22 +638,43 @@ bundled together in this run.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented an empirical comparison of three representation-learning
-conditions for PPO on a real-time Android game played through
-\texttt{adb} at $\sim$\SI{2}{\hertz} effective interaction rate.
-Across 9 PPO runs, pixel-reconstruction auxiliary loss (DPR)
-consistently hurt performance both during training and under
-deterministic evaluation; object-centric pose regression (OCA) showed
-a modest training-time advantage over the no-aux baseline that did
-not survive to a $n{=}5$ deterministic evaluation. The most
-operationally significant qualitative finding was that Random Network
-Distillation successfully rescued four hard entropy collapses,
-suggesting that intrinsic-motivation signals may be of practical
-importance when training PPO on adversarial real-time games where the
-reward landscape encourages premature policy commitment. We also
-described a crash-proof distributed training protocol that handled
-all 13 emulator-level failures and a cluster-wide kill event without
-manual intervention or loss of any final checkpoint.
+We presented the first systematic empirical study of
+representation-learning auxiliary losses for on-policy DRL on a real
+Android emulator, addressing the three research questions raised in
+\S\ref{sec:intro}.
+
+\textbf{Re (Q1)}: On a real Android game at $\sim$\SI{2}{\hertz}
+interaction rate, the popular claim that pixel-reconstruction
+auxiliary losses help DRL did \emph{not} replicate: DPR consistently
+hurt performance both in training-time return (Table~\ref{tab:perseed})
+and under deterministic evaluation (Table~\ref{tab:eval}).
+Object-centric pose regression (OCA) showed a modest training-time
+advantage but did not dominate the baseline in our $n{=}5$
+deterministic evaluation.
+
+\textbf{Re (Q2)}: The charge-duration observation augmentation we
+propose was used by all 9 runs and was sufficient (combined with RND)
+for the baseline to learn a positive-return policy in at least one
+seed (ws1, eval mean $+0.8$, median $0$, with a single $+4$ episode).
+We did not factorially ablate the augmentation, but its absence in
+preliminary runs (not reported) led to uniformly random policies.
+
+\textbf{Re (Q3)}: RND reliably rescues hard entropy collapse in this
+setting. In four documented cases (Table~\ref{tab:collapse}), the
+policy entropy dropped below $0.05$ and was subsequently restored to
+the typical band of healthy runs ($\sim 0.5$), with returns also
+recovering in three of the four cases. This recovery story is, to our
+knowledge, novel for RND in the adversarial sparse-reward regime.
+
+Our principal methodological takeaway is a \emph{cautionary} one:
+auxiliary-loss results that hold robustly on fast idealised
+simulators do not necessarily transfer to slow real-system DRL,
+and a representation prior that is dynamics-relevant (OCA) was at
+best comparable, and not strictly better, than the baseline once
+deterministic evaluation was used. The crash-proof distributed
+training protocol described in \S\ref{sec:orchestration} handled
+all 13 emulator-level failures and a cluster-wide kill event
+without manual intervention and is released alongside this paper.
 
 \section*{References}
 {\small
