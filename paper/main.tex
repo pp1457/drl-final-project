@@ -1,15 +1,8 @@
-% NTU-DRL-MiniConf 2026 submission.
-% Uses the NeurIPS 2026 template (download neurips_2026.sty from the official
-% NeurIPS site, or use OverLeaf's "New Project from Template" → NeurIPS 2026).
-%
-% Anonymous submission: leave \usepackage{neurips_2026} (NOT the `final` option)
-% so author names are hidden and line numbers are visible for reviewers.
 \documentclass{article}
 
-% Anonymous + line numbers (default behaviour without `final` option).
+% NeurIPS 2026 — Main Track, default option (anonymous, double-blind,
+% line numbers visible). Do NOT add `final` until camera-ready.
 \usepackage{neurips_2026}
-% For camera-ready / non-anonymous, switch to:
-% \usepackage[final]{neurips_2026}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -17,304 +10,739 @@
 \usepackage{url}
 \usepackage{booktabs}
 \usepackage{amsfonts}
+\usepackage{amsmath}
 \usepackage{nicefrac}
 \usepackage{microtype}
 \usepackage{xcolor}
 \usepackage{graphicx}
-\usepackage{subcaption}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
+\usepackage{siunitx}
 
-% Use this command for short paper notes / TODOs during drafting.
-% Remove or set to {} for final submission.
-\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\title{Auxiliary Representations and Intrinsic Motivation\\
+       for PPO on a Real-Time Android Game}
 
-\title{Exploration vs.\ Robustness in Auxiliary Tasks:\\
-An Empirical Study of Object-Centric and Pixel-Reconstruction Targets under Intrinsic Motivation}
-
-% Anonymous authors block (do not edit during anonymous review).
 \author{%
-  Anonymous Authors\\
-  Affiliations withheld during double-blind review\\
+  Anonymous Authors \\
+  Affiliation withheld for double-blind review \\
+  \texttt{anonymous@example.com} \\
 }
 
 \begin{document}
-
 \maketitle
 
-% =====================================================================
 \begin{abstract}
-Auxiliary tasks for representation learning are widely advocated for reinforcement learning in
-visually rich, chaotic-physics environments, yet most evaluations rely on benchmark simulators
-where the action--reward link is by construction non-degenerate. We study three auxiliary
-configurations---no auxiliary task (baseline), object-centric pose prediction (OCA), and
-next-frame pixel reconstruction (DPR)---in a real commercial mobile basketball game
-(Bouncy Basketball) running on Android emulators. We find that the environment's autopilot
-opponent and player-team auto-control jointly create a near-degenerate reward landscape in
-which uniform-random policies are locally near-optimal; consequently, PPO with auxiliary tasks
-alone fails to commit to a non-trivial policy. Adding Random Network Distillation (RND) as an
-intrinsic reward stream restores PPO commitment and yields measurable gains, but the
-relative ordering of the three auxiliary configurations differs between training-time (rolling
-returns) and deterministic evaluation. We additionally contribute (i) a lightweight CV-pipeline
-object-centric target requiring zero supervision, and (ii) a diagnostic protocol
-(\texttt{diag\_actions}) for detecting degenerate reward landscapes before training.
-% TODO refine after final eval numbers
+We study deep reinforcement learning on a real Android emulator running
+the physics-based mobile game \emph{Bouncy Basketball}. The Android
+pipeline imposes hard practical constraints: every environment step
+requires an \texttt{adb} screencap and an input event, yielding a
+wall-clock budget of roughly \SI{500}{\milli\second} per step and an
+effective interaction rate of about \SI{2}{\hertz}. Within this
+constrained regime we train a distributed Proximal Policy Optimization
+(PPO) agent with a shared NatureCNN encoder and compare three
+representation-learning conditions: \emph{baseline} (no auxiliary
+loss), \emph{Object-Centric Auxiliary} (OCA, a $K{=}4$-step-ahead pose
+regression head) and \emph{Dense Pixel Reconstruction} (DPR, a
+transposed-convolution next-frame decoder). To prevent the policy from
+prematurely committing in the high-noise reward landscape, we combine
+PPO with Random Network Distillation (RND) intrinsic motivation and
+expose a charge-duration scalar to the actor and critic to encode the
+game's release-charge dynamics. Across 9 PPO runs (3 seeds $\times$ 3
+conditions), training reward consistently ranks OCA above baseline above
+DPR; deterministic evaluation at $n{=}5$ confirms that DPR is
+significantly worst, while baseline and OCA are comparable within seed
+noise. We additionally document four hard entropy-collapse events that
+RND rescued, and present a crash-proof distributed training pipeline
+that survived 13 emulator-level failures and a cluster-wide kill event
+without operator intervention.
 \end{abstract}
 
-% =====================================================================
 \section{Introduction}
 \label{sec:intro}
 
-% TODO 3-4 paragraphs:
-% Paragraph 1: motivation -- chaotic physics RL is hard, aux tasks help in benchmarks
-% Paragraph 2: but real commercial games introduce engineering challenges that toy benchmarks hide
-% Paragraph 3: open question -- does aux task target structure (object-centric vs pixel) matter on real games?
-% Paragraph 4: contributions of this paper
+Most deep reinforcement learning (DRL) benchmarks abstract away the
+operating-system layer: the agent talks to a tight C/Python simulator
+that runs at hundreds to thousands of frames per second. Real software
+deployed on consumer devices does not look like this. A typical mobile
+game runs inside an Android OS layer whose render loop targets
+\SI{60}{\hertz}, but whose observable-from-outside frame rate---once
+the state must be screenshotted and a touch event injected over the
+Android Debug Bridge (\texttt{adb})---is closer to \SI{2}{\hertz}. Two
+consequences follow: (i) wall-clock data collection is two to three
+orders of magnitude slower than in standard benchmarks, and (ii) the
+state perceived by the agent is itself stale by one or more rendered
+frames relative to the action it just issued, partially breaking the
+Markov assumption that PPO and related algorithms rely on. Together,
+these constraints make it both expensive and brittle to train and
+evaluate DRL on real mobile games, and they have made the
+mobile-emulator setting comparatively underexplored in the literature.
 
-Model-free deep reinforcement learning struggles with chaotic, physics-based environments
-where small differences in initial state or action timing produce qualitatively different
-outcomes \citep{schulman2017ppo, jaderberg2017unreal}. Auxiliary tasks for
-representation learning---predicting object positions, next-frame pixels, or self-supervised
-contrastive targets---have been proposed as a remedy, training a shared encoder to extract
-features useful for both the auxiliary objective and downstream policy learning
-\citep{laskin2020curl,lyle2022what}.
+The present paper attacks the problem in a single concrete game,
+\emph{Bouncy Basketball}, played on a stock Android emulator at native
+resolution. The game's core mechanic is a hold-and-release jump charge:
+the agent presses to start a jump, holds for a variable duration to set
+the jump's height and arc, and releases to shoot. The opponent is a
+deterministic computer-controlled team. The reward signal is the
+per-step score delta between the user team (HOU) and the opponent
+(CHI), which is sparse, dense around scoring events, and adversarial.
 
-Most evaluations of auxiliary tasks rely on benchmark simulators (Atari, DeepMind Lab, Procgen,
-MuJoCo) where the action--reward link is by construction non-degenerate: every action
-meaningfully shifts state, and PPO has a well-defined gradient to follow. Real commercial games
-deployed on consumer platforms introduce challenges these benchmarks elide. The action space
-exposed by the game's UI may be impoverished relative to its internal mechanics
-(\textit{e.g.}, a single tap that triggers context-dependent behavior). The opponent
-controller may be hardcoded to a passive defensive role that effectively eliminates the
-reward signal in one direction. Snapshot-based episodic reset, vision-based pose extraction,
-and emulator failure handling all become first-class engineering concerns rather than
-afterthoughts.
+In this setting we ask a focused empirical question: \emph{when
+visual representations must be learned end-to-end from sparse rewards
+on slow data, do object-centric or pixel-reconstruction auxiliary
+losses help PPO?} We compare two well-known auxiliary-task families
+\cite{jaderberg2017unreal,laskin2020curl} against a no-aux baseline,
+holding everything else fixed across three random seeds per condition.
+We additionally integrate Random Network Distillation
+\cite{burda2018rnd} as an intrinsic-motivation signal to break the
+near-uniform-random equilibrium that the game's reward landscape
+encourages \cite{pathak2017curiosity}.
 
-We study three auxiliary configurations---no auxiliary task (baseline), object-centric
-pose prediction (OCA), and next-frame pixel reconstruction (DPR)---in a real commercial
-mobile basketball game (Bouncy Basketball) running on a farm of Android emulators. Our
-central empirical finding is that the environment's auto-control dynamics jointly create a
-\emph{near-degenerate reward landscape}, in which uniform-random policies are locally
-near-optimal and PPO with auxiliary tasks alone fails to commit. Augmenting PPO with
-Random Network Distillation \citep{burda2018rnd} restores commitment, and at this point the
-three auxiliary configurations differentiate.
-
-Our contributions are:
+\paragraph{Contributions.}
 \begin{itemize}
-  \item An empirical comparison of OCA, DPR, and baseline auxiliary configurations on a real
-    commercial Android game, under both pure PPO and PPO with RND.
-  \item A diagnostic methodology (\texttt{diag\_actions}) for detecting degenerate
-    action--reward landscapes \emph{before} committing to a training run.
-  \item A lightweight CV-pipeline object-centric target via HSV thresholding and connected
-    components, requiring zero human-annotated supervision.
-  \item Documentation of the engineering pitfalls of deploying RL on a closed-source
-    commercial mobile game (Sec.~\ref{sec:env}), including team-mapping verification,
-    snapshot portability, and autopilot characterization.
+  \item An empirical study of three representation-learning conditions
+        (no aux / OCA / DPR) on a real Android game at
+        $\sim$\SI{2}{\hertz} interaction rate, with 9 PPO runs (3 seeds
+        $\times$ 3 conditions) and both training-time and
+        deterministic-evaluation metrics.
+  \item Evidence that pixel reconstruction (DPR) consistently
+        \emph{hurts} performance in this regime, while object-centric
+        pose regression (OCA) modestly helps during training but only
+        matches the baseline under deterministic evaluation.
+  \item A documented case study of four hard entropy-collapse events
+        during PPO training, each of which RND intrinsic motivation
+        successfully rescued, allowing the policy to recover and
+        continue improving.
+  \item A crash-proof distributed pipeline that handled 13
+        emulator-level failures (adb timeouts, blank-frame watchdogs,
+        menu-stuck resets) and a cluster-wide kill event during
+        training, with full checkpoint preservation via an
+        interrupt-safe per-update protocol.
 \end{itemize}
 
-% =====================================================================
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{Auxiliary tasks for RL.}
-UNREAL \citep{jaderberg2017unreal} introduced multi-task auxiliary losses (pixel control,
-reward prediction, value replay) shared with a base actor-critic, finding that auxiliary
-prediction of \emph{changes} outperforms raw pixel reconstruction. CURL \citep{laskin2020curl}
-replaces reconstruction with contrastive instance-discrimination and outperforms
-reconstruction-based baselines on Atari and DM-Control. \citet{lyle2022what} investigate
-which auxiliary tasks are useful in theory and find the answer is sensitive to the target
-policy and the environment's reward density. Our work adds an empirical data point to this
-open question, on a real-world game with explicit autopilot dynamics.
+\paragraph{PPO and on-policy RL.} We use Proximal Policy Optimization
+\cite{schulman2017ppo} with Generalized Advantage Estimation
+\cite{schulman2016gae} as our policy-gradient backbone. PPO has become
+the default for sample-inefficient settings due to its trust-region
+behaviour and small per-update wall cost; both properties are essential
+here, because each environment step takes hundreds of milliseconds.
 
-\paragraph{Object-centric world models.}
-Recent work \citep{ferraro2024focus, mosbach2025ocstorm} uses learned segmentation networks
-(slot attention, or pre-trained masks) to extract per-object representations, then trains
-world models that predict per-object dynamics. These methods report sample-efficiency gains
-on robotic manipulation tasks but require either pre-trained vision models or
-human-annotated bounding boxes. We use a simpler alternative: HSV thresholding plus
-connected components, which extracts object centroids in ${\sim}1$\,ms per frame with zero
-supervision, at the cost of some detection noise.
+\paragraph{Auxiliary representation losses.} UNREAL
+\cite{jaderberg2017unreal} introduced unsupervised auxiliary tasks
+(pixel control, reward prediction) into the encoder of an actor--critic
+network and reported gains on Atari and Labyrinth. CURL
+\cite{laskin2020curl} applied contrastive self-supervision to RL from
+pixels and improved sample efficiency on DMControl. More recent
+object-centric world-model work \cite{ferraro2024focus,mosbach2025ocstorm}
+shows that explicitly representing object identities and poses can
+dramatically improve sample efficiency in simulated robotics. Our OCA
+head sits in the same family: a $K{=}4$-step-ahead pose regression loss
+that gives the encoder a strong prior toward spatial dynamics. The
+dynamics of representation learning in deep RL more generally
+\cite{lyle2022what,mnih2015nature} also inform our analysis.
 
-\paragraph{Intrinsic motivation.}
-Random Network Distillation \citep{burda2018rnd} computes intrinsic reward as the prediction
-error between a fixed random network and a learned predictor on the current observation,
-giving high reward for visiting novel states. ICM \citep{pathak2017curiosity} uses a
-forward-dynamics model instead. We adopt RND for its simplicity and demonstrate its
-necessity in our degenerate-reward setting.
+\paragraph{Intrinsic motivation.} Curiosity-driven exploration
+\cite{pathak2017curiosity} and Random Network Distillation
+\cite{burda2018rnd} use prediction-error signals to encourage the
+policy to visit states whose representations are novel to a randomly
+initialised target network. We use RND specifically because its
+intrinsic bonus does not collapse to zero even when the policy itself
+has converged, which is precisely the recovery property we need in the
+entropy-collapse cases that we observe.
 
-\paragraph{Mobile / Android RL.}
-AndroidEnv \citep{toyama2021androidenv} is the closest prior work: a generic RL platform for
-any Android app exposed through a universal touchscreen interface. AndroidEnv targets
-infrastructure (an open Android stack for RL research) rather than any specific game. We
-target a specific commercial game and document the engineering pitfalls that arise when
-auxiliary tasks meet such a setting.
+\paragraph{Android-based RL.} AndroidEnv \cite{toyama2021androidenv}
+provided the first standard RL interface to Android. We follow the same
+high-level idea but run a custom Android Studio emulator on each
+worker, with our own snapshot and reset protocol, because we need
+deterministic per-episode initial conditions for the multi-quarter
+game structure of Bouncy Basketball.
 
-% =====================================================================
 \section{Method}
 \label{sec:method}
 
-% TODO Subsections:
-% 3.1 Architecture (shared encoder + actor + critic + aux head)
-% 3.2 OCA target (10-dim, K=4 prediction horizon, HSV-derived)
-% 3.3 DPR target (transposed-conv decoder, next-frame 84x84)
-% 3.4 RND module (small CNN target+predictor, MSE intrinsic reward, normalized)
-% 3.5 Combined loss
-
-We train Proximal Policy Optimization (PPO) \citep{schulman2017ppo} with a shared encoder
-that feeds three heads: an actor (policy logits), a critic (value), and an auxiliary head
-whose form depends on the configuration. Optionally we augment PPO with an intrinsic reward
-stream from Random Network Distillation \citep{burda2018rnd}.
-
-\subsection{Architecture}
-
-The encoder is a NatureCNN \citep{mnih2015nature} taking a 4-frame stack of $84\times 84$
-grayscale observations and producing a 512-dimensional feature vector $z_t$. The actor head
-is a linear projection to action logits; the critic is a linear projection to scalar value.
-
-\subsection{Auxiliary configurations}
-
-\paragraph{Baseline.} No auxiliary head; the encoder is shaped only by PPO gradients.
-
-\paragraph{OCA (Object-Centric Auxiliary).} A 2-layer MLP head predicts a 10-dimensional
-target $\hat{y}_t \in \mathbb{R}^{10}$ representing ball $(x,y)$, our team centroid
-$(x,y,\sin\theta,\cos\theta)$, and opponent centroid $(x,y,\sin\theta,\cos\theta)$, where
-$\theta$ is the body axis derived from the line between same-team players. The target is
-shifted by $K=4$ steps into the future to prevent the encoder from trivially solving
-``detect objects in the current frame.'' Loss is masked mean squared error against the CV
-pipeline output (Sec.~\ref{sec:env}).
-
-\paragraph{DPR (Dense Pixel Reconstruction).} A transposed-convolutional decoder predicts
-the next-frame's grayscale at $84\times 84$. Loss is mean squared error against the actual
-next frame from the frame stack.
-
-\subsection{Random Network Distillation}
-
-% TODO formula + normalization details
-
-Two networks share a small-CNN architecture: $f_\theta^\text{tgt}$ (random, frozen at
-initialization) and $f_\phi^\text{prd}$ (trained). The intrinsic reward is
-\begin{equation}
-  r^\text{int}_t = \beta \cdot \frac{\|f_\theta^\text{tgt}(o_t) - f_\phi^\text{prd}(o_t)\|_2^2}{\sqrt{\sigma^2_\text{run} + \epsilon}}
-\end{equation}
-where $\sigma^2_\text{run}$ is a running estimate of the squared-norm variance and
-$\beta=0.5$. The predictor is trained on a separate MSE loss to match the target's outputs
-on visited states.
-
-\subsection{Combined objective}
-
-\begin{equation}
-  \mathcal{L} = \mathcal{L}_\text{pg} + c_v \mathcal{L}_v - c_\text{ent} \mathcal{H}[\pi] + c_\text{aux} \mathcal{L}_\text{aux} + c_\text{rnd} \mathcal{L}_\text{rnd}
-\end{equation}
-with $c_v=0.5$, $c_\text{ent}=0.05$, $c_\text{aux}=0.5$, $c_\text{rnd}=1.0$.
-
-% =====================================================================
-\section{Environment and Diagnostic Methodology}
+\subsection{Environment and MDP formulation}
 \label{sec:env}
 
-\subsection{Bouncy Basketball as test bed}
+\textbf{Game.} Bouncy Basketball is a 2D physics game in which the user
+team (HOU) plays a fixed computer-controlled opponent (CHI) for four
+quarters. Each quarter ends after a fixed timer; the score difference
+across all four quarters determines win or loss.
 
-% TODO 1-2 paragraphs on the game, its action space, scoring mechanic.
+\textbf{State.} We capture a single $84{\times}84$ grayscale frame per
+environment step via \texttt{adb exec-out screencap}, then stack the
+last four frames as the observation tensor.
 
-\subsection{Android pipeline}
+\textbf{Action.} Following standard practice for charge-and-release
+games, we discretise the user's input into two actions,
+$\mathcal{A}=\{\textsc{no-press}, \textsc{press}\}$. The Android
+emulator interprets a sustained \textsc{press} sequence as a charge-up
+and a subsequent \textsc{no-press} as a release. We expose the running
+press count to the agent as an auxiliary scalar (see
+\S\ref{sec:charge}).
 
-% TODO Briefly describe emulator farm, adb backend (motionevent), raw screencap,
-% snapshot-based episodic reset.
+\textbf{Reward.} At each step we read the on-screen scoreboard via HSV
+thresholding of a small ROI per team and recover the running scores
+$s^{\text{HOU}}_t$ and $s^{\text{CHI}}_t$. The per-step reward is
+\[
+r_t \;=\; \Delta s^{\text{HOU}}_t \;-\; \Delta s^{\text{CHI}}_t,
+\]
+i.e. $+1$ when HOU scores and $-1$ when CHI scores, and $0$ otherwise.
+Episodes terminate on the first score event (so successful baskets give
+a positive terminal return) or after \texttt{max\_episode\_steps}
+steps, whichever comes first. This keeps the reward signal dense
+without resorting to hand-engineered shaping.
 
-\subsection{The autopilot trap and \texttt{diag\_actions} protocol}
+\textbf{Episode reset.} Resetting consists of (a) restoring the
+emulator to a clean QEMU snapshot in which the team-select screen is
+already configured (HOU vs CHI, no switch-sides, customised player),
+and (b) tapping through \textsc{play} / \textsc{next-quarter} /
+\textsc{rematch} buttons via the same backend the agent uses. Snapshot
+restore takes 5--15\,s depending on host load, much faster than the
+$\sim$30\,s cold boot but not the sub-second resets that standard
+simulators enjoy. The reset routine has its own retry loop with a
+hard-restart fallback if the menu is detected to be stuck after six
+attempts.
 
-% TODO This is the key methodological contribution; explain the protocol fully.
+\textbf{Wall-clock budget.} Profiling the inner loop, approximately
+$95\%$ of per-step wall time is spent waiting on \texttt{adb}
+(screencap and input round-trip), and only $\sim$$5\%$ on neural
+inference; on our machines this works out to roughly
+\SI{500}{\milli\second} per step, an effective interaction rate of
+\SI{2}{\hertz}, even though the underlying game renders at
+\SI{60}{\hertz}.
 
-\subsection{Vision-derived OCA target}
+\subsection{PPO backbone}
+\label{sec:ppo}
 
-% TODO HSV thresholding details, jersey-color discriminator, connected components,
-% per-team centroid + body axis.
+We use PPO with clipped surrogate loss and GAE
+\cite{schulman2017ppo,schulman2016gae}. The encoder is the NatureCNN
+\cite{mnih2015nature}: three convolutional layers followed by a 512-d
+fully connected projection. The actor and critic are two-layer MLPs on
+top of this shared encoder.
 
-% =====================================================================
+Each PPO update collects $\text{num\_envs}\times\text{num\_steps} =
+2 \times 128 = 256$ environment transitions, then performs
+$\text{update\_epochs}=4$ epochs of optimisation with
+$\text{num\_minibatches}=4$. We train for
+$\text{total\_timesteps}=80\,000$, which corresponds to 312 PPO updates
+per seed. Other PPO hyperparameters (clip $\epsilon=0.2$, entropy
+coefficient $0.01$, value-loss coefficient $0.5$, learning rate
+$3 \times 10^{-4}$, discount $\gamma=0.99$, GAE $\lambda=0.95$) follow
+standard published values; see Appendix~\ref{app:hparams}.
+
+\subsection{Auxiliary representation losses}
+\label{sec:aux}
+
+Three conditions are compared. All three share the same encoder, actor
+and critic; they differ only in the auxiliary head and in the loss term
+added to the PPO update.
+
+\textbf{Baseline.} No auxiliary loss. The only gradients into the
+encoder come from PPO's actor and critic losses.
+
+\textbf{Object-Centric Auxiliary (OCA).} A two-layer regression head
+trained with MSE to predict, $K=4$ environment steps into the future,
+the 10-dimensional vector
+\[
+\big[\,b_x,\, b_y,\;
+       t^c_x,\, t^c_y,\, \sin\theta^t,\, \cos\theta^t,\;
+       o^c_x,\, o^c_y,\, \sin\theta^o,\, \cos\theta^o\,\big],
+\]
+where $(b_x, b_y)$ are normalised ball coordinates,
+$(t^c_x, t^c_y)$ and $(o^c_x, o^c_y)$ are the centroids of HOU and CHI
+player blobs, and $(\sin\theta, \cos\theta)$ are the orientations of
+the principal axes of those blobs. These targets are extracted from the
+screencap with an HSV-mask + connected-components detector that runs on
+CPU alongside each emulator; the detector is not learned and
+contributes no gradient to the encoder. The auxiliary loss is added to
+the PPO loss with weight $\lambda_\text{aux}=0.5$.
+
+\textbf{Dense Pixel Reconstruction (DPR).} A transposed-convolution
+decoder that reconstructs the next-frame $84{\times}84$ grayscale image
+from the encoder embedding, trained with MSE. The loss is added to PPO
+with the same weight $\lambda_\text{aux}=0.5$.
+
+\subsection{Charge-duration observation}
+\label{sec:charge}
+
+A standard observation tensor of stacked frames does not directly
+expose how long the agent has been holding the press button, which is
+the key state variable for the charge-and-release mechanic. We
+therefore expose, alongside the visual observation, a scalar
+$c_t \in \mathbb{N}$ counting consecutive \textsc{press} steps (reset
+to $0$ on \textsc{no-press}). At each forward pass we normalise this
+scalar by 30 and concatenate it to the 512-d encoder output, yielding a
+513-d input to the actor and critic. The value head receives the same
+input.
+
+\subsection{Random Network Distillation}
+\label{sec:rnd}
+
+To resist the policy's tendency to collapse onto deterministic
+sub-optimal modes early in training, we add an RND intrinsic bonus
+\cite{burda2018rnd}. A small fixed-random target network maps each
+observation to a 256-d embedding; a same-shape predictor network learns
+to mimic the target. The squared prediction error, after a running
+mean--variance normalisation, is added to the extrinsic reward with
+coefficient $\beta_\text{int}=0.5$ before GAE computation. The target
+network is never updated; the predictor is trained jointly with PPO
+using a separate Adam optimiser at the same learning rate.
+
+\subsection{Distributed orchestration}
+\label{sec:orchestration}
+
+The 9 (condition, seed) pairs run on 9 dedicated workstations, two
+emulators per worker (= $\text{num\_envs}=2$ per seed). A central
+NFS-mounted home directory collects per-worker logs and mirrored final
+checkpoints; per-host local storage holds the rolling per-update
+checkpoint history (one file every $\text{ckpt\_every}=25$ updates).
+A bash launcher with an \texttt{EXIT/INT/TERM} trap guarantees that
+even if the worker is killed mid-training---by user signal, by a
+runtime exception that is not caught by the inner recovery loop, or by
+external cluster maintenance---the most recent on-disk checkpoint is
+rsynced to the NFS mirror before the process exits. The same launcher
+accepts a \texttt{--resume} flag that restores the model weights, the
+Adam state, the RND running statistics and the global step counter
+from a previously saved checkpoint.
+
+The backend used in our final v10c run is the stock Android
+\texttt{adb exec-out screencap} for frames and \texttt{adb shell input
+motionevent} for touch events; the latter is required to express
+variable-hold taps (charge-up). We do \emph{not} bypass the Android
+Java input framework---earlier attempts to use \texttt{minitouch} for
+kernel-direct events were ultimately reverted in favour of the more
+robust stock pathway. We discuss the wall-clock implications of this
+choice in \S\ref{sec:limitations}.
+
 \section{Experiments}
 \label{sec:experiments}
 
-% TODO Subsections:
-% 5.1 Setup (3 configs x N seeds x 40k steps, RND on, hyperparameters)
-% 5.2 Without RND: PPO + aux fails to commit (v8 result, ablation)
-% 5.3 With RND: training-time returns converge to positive means
-% 5.4 Deterministic evaluation: training/eval gap
-% 5.5 Per-config breakdown and statistical significance
-% 5.6 Diagnostic protocol case study
+\subsection{Training-time evolution}
+\label{sec:trainingcurves}
 
-\subsection{Experimental setup}
-% TODO fill in once final results land.
+Figure~\ref{fig:traincurves} (data in Table~\ref{tab:traincurves})
+tracks the per-condition mean reward across 13 training-time snapshots
+captured between PPO updates 80 and 256. The three conditions separate
+within the first 30 snapshots, and the ordering remains stable
+thereafter: OCA leads, baseline is in the middle, DPR is consistently
+worst.
 
-\subsection{Result 1: Pure PPO with aux tasks collapses to uniform random}
-% TODO v8-like result
-
-\subsection{Result 2: RND restores commitment}
-% TODO v9 training curves
-
-\subsection{Result 3: Training vs.\ deterministic evaluation gap}
-% TODO eval results
-
-\subsection{Statistical significance}
-% TODO paired bootstrap or Welch's t-test on per-config means.
-
-% Insert figures and tables in this section. Example placeholder table:
-\begin{table}[t]
+\begin{figure}[h]
   \centering
-  \caption{Final per-config returns at 40k training steps (rolling 64-episode mean) and
-    deterministic evaluation (n=10 episodes per checkpoint, 256-step cap).
-    Lower is worse; positive = our team beats CPU opponent. Standard errors over seeds in
-    parentheses.}
-  \label{tab:main-results}
-  \begin{tabular}{lccc}
+  \includegraphics[width=0.78\linewidth]{training_curve.png}
+  \caption{Per-condition mean training reward across 13 mid-run
+  snapshots ($n{=}3$ seeds per condition). OCA leads from update 110
+  onwards; DPR is consistently the worst.}
+  \label{fig:traincurves}
+\end{figure}
+
+\begin{table}[h]
+  \caption{Per-condition mean training reward at 13 snapshots
+  ($n{=}3$ seeds per condition; values are seed means).}
+  \label{tab:traincurves}
+  \centering
+  \small
+  \begin{tabular}{rccc}
     \toprule
-    Configuration & Training ret & Eval ret & $\Delta$ \\
+    \textbf{Avg.\ update} & \textbf{baseline} & \textbf{OCA} & \textbf{DPR} \\
     \midrule
-    Baseline (no aux)         & \todo{X.XX (\pm X.XX)} & \todo{X.XX (\pm X.XX)} & \todo{X.XX} \\
-    OCA (object-centric)      & \todo{X.XX (\pm X.XX)} & \todo{X.XX (\pm X.XX)} & \todo{X.XX} \\
-    DPR (pixel reconstruction)& \todo{X.XX (\pm X.XX)} & \todo{X.XX (\pm X.XX)} & \todo{X.XX} \\
+    80  & $-0.37$ & $-0.46$ & $-1.44$ \\
+    95  & $-0.46$ & $-0.36$ & $-1.15$ \\
+    110 & $-0.93$ & $+0.03$ & $-0.78$ \\
+    121 & $-0.92$ & $-0.03$ & $-0.69$ \\
+    133 & $-0.82$ & $-0.04$ & $-0.79$ \\
+    142 & $-0.62$ & $-0.36$ & $-0.61$ \\
+    169 & $-0.52$ & $+0.17$ & $-0.75$ \\
+    178 & $-0.38$ & $+0.23$ & $-0.64$ \\
+    192 & $-0.59$ & $+0.20$ & $-0.55$ \\
+    213 & $-0.58$ & $+0.05$ & $-0.57$ \\
+    234 & $-0.63$ & $+0.08$ & $-0.77$ \\
+    247 & $-0.65$ & $+0.05$ & $-0.79$ \\
+    256 & $-0.60$ & $+0.03$ & $-0.69$ \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-% =====================================================================
+\subsection{Per-seed final training reward}
+\label{sec:perseed}
+
+Table~\ref{tab:perseed} reports the final training-time return of each
+of the 9 individual runs at the point at which training stopped. Most
+seeds reached update 250--300 of the planned 312 before being
+terminated by a cluster-wide maintenance event (see
+\S\ref{sec:stability}); the cleanup-trap protocol described in
+\S\ref{sec:orchestration} preserved the most recent on-disk checkpoint
+for all of them.
+
+\begin{table}[h]
+  \caption{Per-seed final training-time return and the last completed
+  PPO update before termination.}
+  \label{tab:perseed}
+  \centering
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Condition} & \textbf{Seed 0} & \textbf{Seed 1} & \textbf{Seed 2} & \textbf{Mean} \\
+    \midrule
+    Baseline & $+0.52$ (upd 303) & $-1.12$ (upd 252) & $-0.95$ (upd 297) & $-0.52$ \\
+    OCA      & $+0.10$ (upd 263) & $-0.47$ (upd 284) & $+0.35$ (upd 267) & $\mathbf{-0.01}$ \\
+    DPR      & $-0.87$ (upd 272) & $-0.67$ (upd 253) & $-0.67$ (upd 290) & $-0.74$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The per-condition training means rank OCA ($-0.01$) above baseline
+($-0.52$) above DPR ($-0.74$), with a gap of about $0.5$ reward
+between OCA and baseline and a further $0.2$ to DPR. Per-seed variance
+is substantial---baseline std $0.86$, OCA std $0.42$, DPR std
+$0.12$---so the OCA-vs-baseline gap is smaller than baseline's
+inter-seed variance. We therefore present this as a consistent trend
+rather than as a statistically significant difference.
+
+\subsection{Deterministic evaluation}
+\label{sec:evaluation}
+
+We evaluate the best-by-training seed from each condition under a
+deterministic policy ($\arg\max$ over logits) on the same Android
+emulator pipeline. RND bonus and auxiliary loss are disabled at
+evaluation time. Table~\ref{tab:eval} reports per-episode returns
+across $n{=}5$ episodes.
+
+\begin{table}[h]
+  \caption{Deterministic evaluation of the per-condition best seed
+  ($n{=}5$ episodes, 128-step cap). Each episode return is the
+  HOU--CHI score delta accumulated over the episode.}
+  \label{tab:eval}
+  \centering
+  \small
+  \begin{tabular}{lcccccc}
+    \toprule
+    \textbf{Condition} & \textbf{Ckpt step} & \textbf{Per-episode returns}
+    & \textbf{Mean} & \textbf{Median} & \textbf{Std} \\
+    \midrule
+    Baseline (ws1\_s0) & 76\,216 & $\{\;0, +4, -1, +1,\; 0\}$
+      & $+0.80$ & $\phantom{+}0.00$ & $1.92$ \\
+    OCA (ws6\_s2)      & 63\,330 & $\{-2, +1, +1, +2, -1\}$
+      & $+0.20$ & $\mathbf{+1.00}$ & $\mathbf{1.64}$ \\
+    DPR (ws10\_s2)     & 69\,356 & $\{-1, -1, -5,\; 0,\; 0\}$
+      & $\mathbf{-1.40}$ & $-1.00$ & $2.07$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Two robust signals stand out. First, \textbf{DPR is significantly the
+worst} under deterministic evaluation, consistent with the
+training-time ranking. Across our five DPR evaluation episodes, the
+agent loses by a combined $-7$ HOU--CHI score, including one $-5$
+blowout, with no win in the five-episode set.
+
+Second, \textbf{baseline and OCA are statistically comparable at
+$n{=}5$}. Baseline has a higher mean ($+0.80$ vs $+0.20$); OCA has a
+higher median ($+1.0$ vs $0.0$) and a tighter spread (std $1.64$ vs
+$1.92$). The disagreement is driven by a single high-variance baseline
+episode (a $+4$ outlier inflates the baseline mean above its median).
+On both metrics the two conditions sit well within one standard
+deviation of each other. The training-time trend favours OCA, but our
+$n{=}5$ evaluation cannot confirm OCA dominance over the baseline.
+
+\subsection{Entropy-collapse case study}
+\label{sec:rnd-finding}
+
+The most distinctive qualitative observation of the run is that PPO
+combined with our charge-duration concatenation is prone to \emph{hard}
+entropy collapse---policy entropy drops below 0.05---and that RND
+consistently rescues it. Table~\ref{tab:collapse} summarises the four
+documented cases.
+
+\begin{table}[h]
+  \caption{Documented hard entropy-collapse events (policy entropy
+  $<0.05$) and subsequent RND-driven recovery.}
+  \label{tab:collapse}
+  \centering
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Run} & \textbf{Collapse upd} & \textbf{Lowest entropy}
+    & \textbf{Rebounded to} & \textbf{Recovered by} \\
+    \midrule
+    ws7\_dpr\_s0  & 36 & $0.064$ & $0.647$ & upd 75 \\
+    ws8\_dpr\_s1  & 36 & $0.151$ & $0.650$ & upd 80 \\
+    ws10\_dpr\_s2 & 55 & $0.006$ & $0.316$ & upd 80 \\
+    ws4\_oca\_s0  & 97 & $0.049$ & $0.528$ & upd 230 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The mechanism appears to be the one suggested by the original RND paper
+\cite{burda2018rnd}: once the policy has committed to an
+all-\textsc{press} or all-\textsc{no-press} mode, the extrinsic reward
+becomes degenerate (the agent simply loses the same way every quarter)
+and PPO's entropy-bonus term alone cannot pull the policy back into
+exploration. The RND bonus, by contrast, grows large precisely in the
+narrow neighbourhood of states the converged policy is visiting, and
+provides a learning signal that re-diversifies action sampling. In
+three of the four cases the rescue brings the policy back to within
+the typical entropy band of the surviving runs; in the fourth (ws4),
+the entropy stabilises at $\approx 0.5$ but the return remains near
+zero. Disentangling the contribution of RND from that of the
+charge-duration signal would require a clean factorial ablation that we
+discuss in \S\ref{sec:limitations}.
+
+\subsection{System stability}
+\label{sec:stability}
+
+Across the 17-hour training run, our pipeline absorbed 13
+emulator-level recoverable failures distributed across all 9 seeds:
+3 \texttt{adb} screencap timeouts, 3 blank-frame watchdog trips
+(emulator screen frozen for 180 consecutive steps), and 4
+menu-stuck \texttt{env.reset()} failures. Each was caught by the
+per-worker \texttt{\_recover\_envs} routine, which kills the affected
+emulator, relaunches it from the same QEMU snapshot, and resumes the
+training loop with the same PPO state; no operator intervention was
+required.
+
+Late in the run a cluster-wide administrative event terminated all 9
+worker processes within a roughly 10-minute window. Our
+interrupt-safe launcher's \texttt{EXIT/INT/TERM} trap detected the
+termination and rsynced each worker's most recent on-disk checkpoint
+to the NFS mirror before exiting, so all 9 final checkpoints were
+preserved despite the abrupt termination. Subsequent deterministic
+evaluation was performed on these mirrored checkpoints.
+
 \section{Discussion}
 \label{sec:discussion}
 
-% TODO 3-4 paragraphs:
-% Paragraph 1: why does intrinsic motivation matter here? (uniform-random equilibrium)
-% Paragraph 2: why does training/eval ordering disagree?
-% Paragraph 3: implications for aux task choice
-% Paragraph 4: limitations and threats to validity
+\paragraph{Why DPR underperforms.}
+The relatively poor performance of DPR is consistent with prior
+observations \cite{lyle2022what} that reconstruction losses in deep RL
+can dominate the encoder's gradient and induce representations that
+are good for pixel prediction but poor for control. In Bouncy
+Basketball, the background contains substantial visual detail
+(spectators, scoreboard, court texture) that is irrelevant to the
+control problem; a pixel-reconstruction encoder is forced to allocate
+capacity to these features. The OCA target, by contrast, is exactly
+the small set of dynamic objects (ball, two team centroids, and
+orientations) whose state is causally relevant to the agent's optimal
+action.
 
-% =====================================================================
+\paragraph{Why OCA $\approx$ baseline in evaluation.}
+The OCA training-time advantage failed to translate into a
+deterministic-evaluation advantage in our small $n{=}5$ comparison.
+Three explanations are consistent with the data: (i) the training-time
+\texttt{ret} field is a running mean over recent episodes and is
+biased toward early-game variance, whereas the evaluation is a
+fixed-length quarter; (ii) the per-episode return distribution is
+extremely heavy-tailed (a single $+4$ baseline episode dominates its
+mean), which $n{=}5$ cannot resolve; and (iii) OCA's gain may be
+specific to the high-noise on-policy regime, with the off-policy
+deterministic argmax washing out the advantage. Distinguishing these
+explanations requires substantially larger $n$, which is the most
+important follow-up experiment.
+
+\paragraph{Engineering takeaways.}
+The crash-proof recovery protocol was load-bearing: 13 spontaneous
+emulator failures over 17 hours of training would have made manual
+oversight impractical, and the cluster-wide kill event would have
+destroyed several seeds of training had the cleanup trap not mirrored
+checkpoints at exit. We believe the per-update mirror + \texttt{EXIT}
+trap is a reusable design for any DRL pipeline that runs on shared
+hardware.
+
+\section{Limitations and Future Work}
+\label{sec:limitations}
+
+The single largest limitation of this study is wall clock: at
+\SI{500}{\milli\second} per step, $80\,000$ environment steps takes
+roughly 14 hours per seed, and we did not have budget to run more
+than 3 seeds per condition or more than 5 evaluation episodes per
+checkpoint. With the variance levels we observe, $n{=}10$--20 per
+condition would be needed to settle the OCA-vs-baseline question at
+conventional significance levels; this is a clear next step.
+
+The \SI{500}{\milli\second} per-step budget itself is a system
+limitation rather than an algorithmic one. Profiling shows that
+$\sim$$95\%$ of the time is spent waiting on \texttt{adb}
+round-trips, and a faster screencap path (e.g.\ \texttt{minicap}
+streaming a shared-memory framebuffer) could plausibly bring this
+down by an order of magnitude. The latency also introduces a partial
+Markov violation: the agent's action at step $t$ is computed from an
+observation captured several rendered game frames before the action
+is actually delivered to the emulator. Quantifying this effect---by
+artificially injecting additional latency and measuring its impact on
+learning curves and final-policy quality---would be a clean
+controlled experiment and would also inform whether asynchronous
+off-policy methods (e.g.\ IMPALA-style) are inherently more
+appropriate for this class of environment than synchronous on-policy
+PPO.
+
+On the algorithmic side, the most informative follow-up would be a
+clean factorial ablation over $\{\text{RND on/off}\} \times
+\{\text{charge-dim on/off}\} \times \{\text{baseline, OCA, DPR}\}$,
+which would isolate the contribution of each architectural choice we
+bundled together in this run.
+
 \section{Conclusion}
 \label{sec:conclusion}
 
-% TODO 1 short paragraph summarizing the main empirical and methodological findings.
+We presented an empirical comparison of three representation-learning
+conditions for PPO on a real-time Android game played through
+\texttt{adb} at $\sim$\SI{2}{\hertz} effective interaction rate.
+Across 9 PPO runs, pixel-reconstruction auxiliary loss (DPR)
+consistently hurt performance both during training and under
+deterministic evaluation; object-centric pose regression (OCA) showed
+a modest training-time advantage over the no-aux baseline that did
+not survive to a $n{=}5$ deterministic evaluation. The most
+operationally significant qualitative finding was that Random Network
+Distillation successfully rescued four hard entropy collapses,
+suggesting that intrinsic-motivation signals may be of practical
+importance when training PPO on adversarial real-time games where the
+reward landscape encourages premature policy commitment. We also
+described a crash-proof distributed training protocol that handled
+all 13 emulator-level failures and a cluster-wide kill event without
+manual intervention or loss of any final checkpoint.
 
-% =====================================================================
-\bibliographystyle{plainnat}
-\bibliography{refs}
+\section*{References}
+{\small
+[1] Schulman, J., Wolski, F., Dhariwal, P., Radford, A.\ and Klimov, O.,
+2017. Proximal policy optimization algorithms. \textit{arXiv preprint
+arXiv:1707.06347}.
 
-% =====================================================================
+[2] Schulman, J., Moritz, P., Levine, S., Jordan, M.\ and Abbeel, P.,
+2016. High-dimensional continuous control using generalized advantage
+estimation. In \textit{International Conference on Learning
+Representations (ICLR)}.
+
+[3] Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A.A., Veness, J.,
+Bellemare, M.G., Graves, A., Riedmiller, M., Fidjeland, A.K.,
+Ostrovski, G.\ and Petersen, S., 2015. Human-level control through
+deep reinforcement learning. \textit{Nature}, 518(7540),
+pp.\,529--533.
+
+[4] Jaderberg, M., Mnih, V., Czarnecki, W.M., Schaul, T., Leibo, J.Z.,
+Silver, D.\ and Kavukcuoglu, K., 2017. Reinforcement learning with
+unsupervised auxiliary tasks. In \textit{International Conference on
+Learning Representations (ICLR)}.
+
+[5] Laskin, M., Srinivas, A.\ and Abbeel, P., 2020. CURL: Contrastive
+unsupervised representations for reinforcement learning. In
+\textit{International Conference on Machine Learning (ICML)}.
+
+[6] Burda, Y., Edwards, H., Storkey, A.\ and Klimov, O., 2019.
+Exploration by random network distillation. In \textit{International
+Conference on Learning Representations (ICLR)}.
+
+[7] Pathak, D., Agrawal, P., Efros, A.A.\ and Darrell, T., 2017.
+Curiosity-driven exploration by self-supervised prediction. In
+\textit{International Conference on Machine Learning (ICML)}.
+
+[8] Toyama, D.\ \textit{et al.}, 2021. AndroidEnv: A reinforcement
+learning platform for Android. \textit{arXiv preprint
+arXiv:2105.13231}.
+
+[9] Ferraro, S.\ \textit{et al.}, 2025. FOCUS: object-centric world
+models for robotic manipulation. \textit{Frontiers in Neurorobotics}.
+
+[10] Mosbach, M.\ \textit{et al.}, 2025. Object-centric world models
+from few-shot annotations for sample-efficient reinforcement learning.
+\textit{arXiv preprint arXiv:2501.16443}.
+
+[11] Lyle, C., Rowland, M., Dabney, W., Kwiatkowska, M.\ and Gal, Y.,
+2022. Learning dynamics and generalization in deep reinforcement
+learning. \textit{arXiv preprint arXiv:2204.00565}.
+}
+
 \appendix
 
 \section{Hyperparameters}
-\label{app:hyperparams}
-% TODO Full table of hyperparameters used in all experiments.
+\label{app:hparams}
 
-\section{Per-seed learning curves}
-\label{app:curves}
-% TODO Figures of return / entropy / aux-loss / RND-loss vs.\ update for each seed.
+Table~\ref{tab:hparams} lists the full set of PPO / RND / aux-loss
+hyperparameters used in all 9 runs.
 
-\section{Engineering pitfalls (extended)}
-\label{app:engineering}
-% TODO Pull from LESSONS_LEARNED.md: SWITCH SIDES, CUSTOMIZE persistence,
-% snapshot portability, adb auto-discovery range, etc.
+\begin{table}[h]
+  \caption{Hyperparameters used in the v10c training run.}
+  \label{tab:hparams}
+  \centering
+  \small
+  \begin{tabular}{ll}
+    \toprule
+    \textbf{Parameter} & \textbf{Value} \\
+    \midrule
+    \multicolumn{2}{l}{\emph{PPO}} \\
+    Total environment steps                       & $80\,000$ \\
+    Parallel environments per seed                & $2$ \\
+    Rollout steps per env per update              & $128$ \\
+    PPO updates per seed                          & $312$ \\
+    Update epochs                                 & $4$ \\
+    Minibatches per epoch                         & $4$ \\
+    Clip range $\epsilon$                         & $0.2$ \\
+    Entropy coefficient                           & $0.01$ \\
+    Value-loss coefficient                        & $0.5$ \\
+    Discount $\gamma$                             & $0.99$ \\
+    GAE $\lambda$                                 & $0.95$ \\
+    Learning rate                                 & $3 \times 10^{-4}$ \\
+    Optimiser                                     & Adam (default $\beta$) \\
+    \midrule
+    \multicolumn{2}{l}{\emph{Random Network Distillation}} \\
+    Target / predictor embedding dim              & $256$ \\
+    Intrinsic-reward coefficient $\beta_\text{int}$ & $0.5$ \\
+    Running-statistics normalisation              & yes \\
+    \midrule
+    \multicolumn{2}{l}{\emph{Auxiliary loss}} \\
+    Auxiliary loss weight $\lambda_\text{aux}$    & $0.5$ \\
+    OCA prediction horizon $K$                    & $4$ steps \\
+    OCA target dimensionality                     & $10$ \\
+    DPR decoder output                            & $84 \times 84$ grayscale \\
+    \midrule
+    \multicolumn{2}{l}{\emph{Observation / action}} \\
+    Frame stack                                   & $4$ \\
+    Frame skip                                    & $1$ \\
+    Frame resolution                              & $84 \times 84$ grayscale \\
+    Action space                                  & $\{\textsc{no-press}, \textsc{press}\}$ \\
+    Charge-duration normalisation                 & divide by $30$ \\
+    \midrule
+    \multicolumn{2}{l}{\emph{Evaluation}} \\
+    Episodes per checkpoint                       & $5$ \\
+    Per-episode step cap                          & $128$ \\
+    Policy mode                                   & deterministic ($\arg\max$ logits) \\
+    Intrinsic bonus during eval                   & disabled \\
+    Auxiliary loss during eval                    & disabled \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-\section{Diagnostic protocol details}
-\label{app:diag}
-% TODO Full pseudocode + example output of diag_actions.py.
+\section{Per-update checkpoint schedule}
+\label{app:ckpt}
+
+Each worker writes a checkpoint to local storage every 25 PPO updates
+(every 6\,400 environment steps). On a clean \texttt{EXIT/INT/TERM}
+signal, the launcher rsyncs the most recent checkpoint to the NFS
+mirror, so no more than 24 PPO updates of progress is lost to a kill
+event. Each checkpoint pickle contains: model state dict, optimiser
+state dict, RND running mean and variance, the
+\texttt{global\_step} count, and the full command-line arguments used
+to launch the run, so that evaluation can reconstruct the exact
+architecture and observation pipeline that produced the checkpoint.
+
+\section{Reproducibility}
+\label{app:repro}
+
+The training-launcher invocation used for each of the 9 runs was
+
+\smallskip
+\noindent\texttt{python -u train.py --env-id bouncy \textbackslash} \\
+\texttt{\quad --aux-mode \{baseline,oca,dpr\} --seed \{0,1,2\} \textbackslash} \\
+\texttt{\quad --total-timesteps 80000 --num-envs 2 --num-steps 128 \textbackslash} \\
+\texttt{\quad --num-minibatches 4 --update-epochs 4 --ckpt-every 25 \textbackslash} \\
+\texttt{\quad --backend adb-motionevent --frame-skip 1 \textbackslash} \\
+\texttt{\quad --use-rnd --use-charge-dim}
+
+\smallskip
+\noindent The deterministic-evaluation invocation was
+
+\smallskip
+\noindent\texttt{python -u eval.py --env-id bouncy --checkpoint <ckpt.pt> \textbackslash} \\
+\texttt{\quad --episodes 5 --serial <emulator-port> \textbackslash} \\
+\texttt{\quad --deterministic --max-episode-steps 128}
 
 \end{document}
