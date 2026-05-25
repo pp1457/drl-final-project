@@ -1,0 +1,497 @@
+=== Mon May 25 02:04:07 CST 2026 - ws1 - baseline seed=0 steps=80000 num_envs=2 ===
+[rank 0] pid=1824908 port=6554 log=/tmp2/b12902046/DRL_final/emu_logs/emu_0.log
+[rank 1] pid=1825415 port=6556 log=/tmp2/b12902046/DRL_final/emu_logs/emu_1.log
+[rank 0] waiting for emulator-6554 to boot...
+[rank 1] waiting for emulator-6556 to boot...
+Wrote 2 endpoints to /tmp2/b12902046/DRL_final/endpoints.json
+Emulator PIDs: [1824908, 1825415]
+[launch_on_ws] emulator farm up
+List of devices attached
+emulator-6554	device
+emulator-6556	device
+
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1779645866.616802 1825966 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+I0000 00:00:1779645866.658522 1825966 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: SSE3 SSE4.1 SSE4.2 AVX AVX2 AVX512F AVX512_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1779645868.315762 1825966 port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+upd 1/312 step 256 sps 1 pg -0.003 v 5.769 ent 0.692 aux 0.0000 rnd 0.0760 ret nan fh 1.00/11.8
+upd 2/312 step 512 sps 1 pg 0.020 v 0.370 ent 0.691 aux 0.0000 rnd 0.0333 ret nan fh 1.00/11.4
+upd 3/312 step 768 sps 1 pg 0.011 v 0.177 ent 0.675 aux 0.0000 rnd 0.0429 ret nan fh 1.00/11.8
+upd 4/312 step 1024 sps 1 pg 0.001 v 1.115 ent 0.689 aux 0.0000 rnd 0.0388 ret nan fh 1.00/10.8
+upd 5/312 step 1280 sps 1 pg 0.001 v 0.448 ent 0.684 aux 0.0000 rnd 0.0300 ret nan fh 1.00/11.1
+upd 6/312 step 1536 sps 1 pg -0.009 v 3.423 ent 0.692 aux 0.0000 rnd 0.0179 ret nan fh 1.00/10.7
+upd 7/312 step 1792 sps 1 pg -0.004 v 2.959 ent 0.693 aux 0.0000 rnd 0.0177 ret nan fh 1.00/11.1
+upd 8/312 step 2048 sps 1 pg -0.019 v 15.061 ent 0.691 aux 0.0000 rnd 0.0142 ret -2.50 fh 1.00/11.3
+upd 9/312 step 2304 sps 1 pg 0.002 v 9.181 ent 0.684 aux 0.0000 rnd 0.0189 ret -2.50 fh 1.00/11.4
+upd 10/312 step 2560 sps 1 pg -0.010 v 15.629 ent 0.688 aux 0.0000 rnd 0.0161 ret -2.50 fh 1.00/11.3
+upd 11/312 step 2816 sps 1 pg 0.002 v 8.454 ent 0.686 aux 0.0000 rnd 0.0155 ret -2.50 fh 1.00/11.5
+upd 12/312 step 3072 sps 1 pg -0.006 v 8.353 ent 0.685 aux 0.0000 rnd 0.0150 ret -2.50 fh 1.00/11.7
+upd 13/312 step 3328 sps 1 pg 0.005 v 6.676 ent 0.665 aux 0.0000 rnd 0.0160 ret -2.50 fh 1.00/11.1
+upd 14/312 step 3584 sps 1 pg -0.014 v 5.032 ent 0.644 aux 0.0000 rnd 0.0140 ret -2.50 fh 1.00/11.3
+upd 15/312 step 3840 sps 1 pg -0.005 v 7.007 ent 0.656 aux 0.0000 rnd 0.0160 ret -2.50 fh 1.00/11.7
+upd 16/312 step 4096 sps 1 pg -0.000 v 4.312 ent 0.653 aux 0.0000 rnd 0.0162 ret -2.50 fh 1.00/11.1
+upd 17/312 step 4352 sps 1 pg 0.013 v 4.218 ent 0.592 aux 0.0000 rnd 0.0148 ret -1.00 fh 1.00/11.9
+upd 18/312 step 4608 sps 1 pg -0.002 v 5.916 ent 0.612 aux 0.0000 rnd 0.0153 ret -1.00 fh 1.00/11.4
+upd 19/312 step 4864 sps 1 pg -0.006 v 6.326 ent 0.633 aux 0.0000 rnd 0.0159 ret -1.00 fh 1.00/12.6
+upd 20/312 step 5120 sps 1 pg 0.001 v 8.124 ent 0.610 aux 0.0000 rnd 0.0160 ret -1.00 fh 1.00/11.2
+upd 21/312 step 5376 sps 1 pg 0.007 v 4.419 ent 0.589 aux 0.0000 rnd 0.0137 ret -1.00 fh 1.00/11.9
+upd 22/312 step 5632 sps 1 pg 0.011 v 8.176 ent 0.596 aux 0.0000 rnd 0.0165 ret -1.00 fh 1.00/11.4
+upd 23/312 step 5888 sps 1 pg 0.021 v 6.592 ent 0.632 aux 0.0000 rnd 0.0119 ret -1.00 fh 1.00/11.7
+upd 24/312 step 6144 sps 1 pg 0.012 v 7.577 ent 0.588 aux 0.0000 rnd 0.0164 ret -1.00 fh 1.00/11.5
+upd 25/312 step 6400 sps 1 pg 0.102 v 64.525 ent 0.355 aux 0.0000 rnd 0.0162 ret -0.67 fh 1.00/12.3
+upd 26/312 step 6656 sps 1 pg -0.004 v 5.679 ent 0.221 aux 0.0000 rnd 0.0158 ret -0.67 fh 1.00/11.4
+upd 27/312 step 6912 sps 1 pg 0.006 v 5.570 ent 0.155 aux 0.0000 rnd 0.0150 ret -0.67 fh 1.00/12.0
+upd 28/312 step 7168 sps 1 pg 0.001 v 7.443 ent 0.093 aux 0.0000 rnd 0.0158 ret -0.67 fh 1.00/11.5
+upd 29/312 step 7424 sps 1 pg 0.000 v 3.368 ent 0.164 aux 0.0000 rnd 0.0139 ret -0.67 fh 1.00/12.2
+upd 30/312 step 7680 sps 1 pg 0.014 v 6.824 ent 0.081 aux 0.0000 rnd 0.0147 ret -0.67 fh 1.00/11.8
+upd 31/312 step 7936 sps 1 pg -0.000 v 8.445 ent 0.128 aux 0.0000 rnd 0.0153 ret -0.67 fh 1.00/12.0
+upd 32/312 step 8192 sps 1 pg 0.001 v 4.967 ent 0.106 aux 0.0000 rnd 0.0144 ret -0.67 fh 1.00/11.3
+upd 33/312 step 8448 sps 1 pg -0.004 v 99.931 ent 0.268 aux 0.0000 rnd 0.0120 ret -1.25 fh 1.00/12.0
+upd 34/312 step 8704 sps 1 pg 0.003 v 3.766 ent 0.246 aux 0.0000 rnd 0.0133 ret -1.25 fh 1.00/11.2
+upd 35/312 step 8960 sps 1 pg 0.010 v 7.136 ent 0.368 aux 0.0000 rnd 0.0128 ret -1.25 fh 1.00/12.1
+upd 36/312 step 9216 sps 1 pg -0.001 v 5.577 ent 0.348 aux 0.0000 rnd 0.0143 ret -1.25 fh 1.00/11.7
+upd 37/312 step 9472 sps 1 pg 0.017 v 6.046 ent 0.450 aux 0.0000 rnd 0.0130 ret -1.25 fh 1.00/11.7
+upd 38/312 step 9728 sps 1 pg 0.072 v 7.132 ent 0.621 aux 0.0000 rnd 0.0146 ret -1.25 fh 1.00/12.3
+upd 39/312 step 9984 sps 1 pg -0.001 v 10.195 ent 0.559 aux 0.0000 rnd 0.0146 ret -1.25 fh 1.00/11.9
+upd 40/312 step 10240 sps 1 pg 0.031 v 5.737 ent 0.478 aux 0.0000 rnd 0.0137 ret -1.25 fh 1.00/11.2
+upd 41/312 step 10496 sps 1 pg -0.007 v 65.915 ent 0.606 aux 0.0000 rnd 0.0130 ret -0.30 fh 1.00/11.9
+upd 42/312 step 10752 sps 1 pg 0.020 v 5.100 ent 0.501 aux 0.0000 rnd 0.0136 ret -0.30 fh 1.00/11.4
+upd 43/312 step 11008 sps 1 pg 0.000 v 8.842 ent 0.516 aux 0.0000 rnd 0.0160 ret -0.30 fh 1.00/12.0
+upd 44/312 step 11264 sps 1 pg 0.021 v 9.435 ent 0.622 aux 0.0000 rnd 0.0118 ret -0.30 fh 1.00/11.3
+upd 45/312 step 11520 sps 1 pg -0.003 v 14.685 ent 0.557 aux 0.0000 rnd 0.0138 ret -0.30 fh 1.00/11.9
+upd 46/312 step 11776 sps 1 pg -0.003 v 15.129 ent 0.602 aux 0.0000 rnd 0.0133 ret -0.30 fh 1.00/12.5
+upd 47/312 step 12032 sps 1 pg 0.068 v 13.428 ent 0.688 aux 0.0000 rnd 0.0138 ret -0.30 fh 1.00/11.9
+upd 48/312 step 12288 sps 1 pg 0.041 v 91.481 ent 0.646 aux 0.0000 rnd 0.0200 ret -0.30 fh 0.96/9.5
+!! recovering envs: upd 49 step 5: RuntimeError("env.reset(): emulator EmulatorEndpoint(adb_serial='emulator-6554', minicap_port=0, minitouch_port=0, snapshot_names=['clean_boot_v8']) stuck after 6 PLAY/NEXT_QUARTER/REMATCH retries — needs hard restart")
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/train.py", line 619, in main
+    next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
+                                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/vector/sync_vector_env.py", line 254, in step
+    self._env_obs[i], env_info = self.envs[i].reset()
+                                 ~~~~~~~~~~~~~~~~~~^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/common.py", line 542, in reset
+    obs, info = super().reset(seed=seed, options=options)
+                ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 333, in reset
+    return self.env.reset(seed=seed, options=options)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/stateful_observation.py", line 444, in reset
+    obs, info = self.env.reset(seed=seed, options=options)
+                ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 553, in reset
+    obs, info = self.env.reset(seed=seed, options=options)
+                ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/env.py", line 308, in reset
+    raise RuntimeError(
+    ...<2 lines>...
+    )
+RuntimeError: env.reset(): emulator EmulatorEndpoint(adb_serial='emulator-6554', minicap_port=0, minitouch_port=0, snapshot_names=['clean_boot_v8']) stuck after 6 PLAY/NEXT_QUARTER/REMATCH retries — needs hard restart
+[rank 0] pid=2158903 port=6554 log=/tmp2/b12902046/DRL_final/emu_logs/emu_0.log
+[rank 1] pid=2158904 port=6556 log=/tmp2/b12902046/DRL_final/emu_logs/emu_1.log
+upd 50/312 step 12556 sps 1 pg 0.016 v 7.996 ent 0.665 aux 0.0000 rnd 0.0122 ret -0.08 fh 1.00/12.0
+upd 51/312 step 12812 sps 1 pg -0.001 v 5.785 ent 0.648 aux 0.0000 rnd 0.0122 ret -0.08 fh 1.00/11.4
+upd 52/312 step 13068 sps 1 pg 0.010 v 2.795 ent 0.564 aux 0.0000 rnd 0.0098 ret -0.08 fh 1.00/11.6
+upd 53/312 step 13324 sps 1 pg -0.001 v 3.266 ent 0.562 aux 0.0000 rnd 0.0106 ret -0.08 fh 1.00/10.7
+upd 54/312 step 13580 sps 1 pg 0.036 v 3.151 ent 0.515 aux 0.0000 rnd 0.0134 ret -0.08 fh 1.00/12.0
+upd 55/312 step 13836 sps 1 pg -0.011 v 4.647 ent 0.485 aux 0.0000 rnd 0.0129 ret -0.08 fh 1.00/11.5
+upd 56/312 step 14092 sps 1 pg -0.002 v 6.919 ent 0.503 aux 0.0000 rnd 0.0126 ret -0.08 fh 1.00/11.2
+upd 57/312 step 14348 sps 1 pg 0.011 v 51.976 ent 0.483 aux 0.0000 rnd 0.0123 ret -0.14 fh 1.00/12.3
+upd 58/312 step 14604 sps 1 pg 0.007 v 9.417 ent 0.546 aux 0.0000 rnd 0.0110 ret -0.14 fh 1.00/11.8
+upd 59/312 step 14860 sps 1 pg 0.002 v 10.173 ent 0.553 aux 0.0000 rnd 0.0120 ret -0.14 fh 1.00/11.9
+upd 60/312 step 15116 sps 1 pg 0.023 v 11.743 ent 0.580 aux 0.0000 rnd 0.0114 ret -0.14 fh 1.00/11.8
+upd 61/312 step 15372 sps 1 pg 0.007 v 6.367 ent 0.539 aux 0.0000 rnd 0.0131 ret -0.14 fh 1.00/12.3
+upd 62/312 step 15628 sps 1 pg 0.042 v 7.336 ent 0.614 aux 0.0000 rnd 0.0131 ret -0.14 fh 1.00/12.1
+upd 63/312 step 15884 sps 1 pg 0.015 v 3.243 ent 0.551 aux 0.0000 rnd 0.0114 ret -0.14 fh 1.00/11.6
+upd 64/312 step 16140 sps 1 pg -0.015 v 4.576 ent 0.592 aux 0.0000 rnd 0.0114 ret -0.14 fh 1.00/11.5
+upd 65/312 step 16396 sps 1 pg 0.005 v 4.543 ent 0.579 aux 0.0000 rnd 0.0124 ret -0.14 fh 1.00/12.1
+upd 66/312 step 16652 sps 1 pg 0.005 v 34.098 ent 0.586 aux 0.0000 rnd 0.0104 ret -0.12 fh 1.00/11.6
+upd 67/312 step 16908 sps 1 pg 0.028 v 4.827 ent 0.510 aux 0.0000 rnd 0.0104 ret -0.12 fh 1.00/11.8
+upd 68/312 step 17164 sps 1 pg 0.016 v 5.216 ent 0.419 aux 0.0000 rnd 0.0102 ret -0.12 fh 1.00/11.5
+upd 69/312 step 17420 sps 1 pg -0.002 v 5.448 ent 0.408 aux 0.0000 rnd 0.0136 ret -0.12 fh 1.00/11.9
+upd 70/312 step 17676 sps 1 pg -0.000 v 5.345 ent 0.406 aux 0.0000 rnd 0.0116 ret -0.12 fh 1.00/11.4
+upd 71/312 step 17932 sps 1 pg 0.018 v 3.305 ent 0.330 aux 0.0000 rnd 0.0142 ret -0.12 fh 1.00/12.0
+upd 72/312 step 18188 sps 1 pg 0.002 v 6.714 ent 0.340 aux 0.0000 rnd 0.0138 ret -0.12 fh 1.00/11.8
+upd 73/312 step 18444 sps 1 pg 0.005 v 5.575 ent 0.392 aux 0.0000 rnd 0.0104 ret -0.12 fh 1.00/11.5
+upd 74/312 step 18700 sps 1 pg -0.001 v 32.292 ent 0.405 aux 0.0000 rnd 0.0118 ret 0.28 fh 1.00/11.4
+upd 75/312 step 18956 sps 1 pg 0.000 v 18.688 ent 0.402 aux 0.0000 rnd 0.0127 ret 0.28 fh 1.00/11.9
+upd 76/312 step 19212 sps 1 pg 0.000 v 11.039 ent 0.398 aux 0.0000 rnd 0.0129 ret 0.28 fh 1.00/11.7
+upd 77/312 step 19468 sps 1 pg -0.000 v 9.143 ent 0.415 aux 0.0000 rnd 0.0108 ret 0.28 fh 1.00/12.2
+upd 78/312 step 19724 sps 1 pg -0.007 v 4.923 ent 0.511 aux 0.0000 rnd 0.0117 ret 0.28 fh 1.00/12.2
+upd 79/312 step 19980 sps 1 pg 0.002 v 5.530 ent 0.498 aux 0.0000 rnd 0.0107 ret 0.28 fh 1.00/11.6
+upd 80/312 step 20236 sps 1 pg 0.029 v 8.746 ent 0.355 aux 0.0000 rnd 0.0100 ret 0.28 fh 1.00/11.3
+upd 81/312 step 20492 sps 1 pg 0.026 v 7.074 ent 0.246 aux 0.0000 rnd 0.0121 ret 0.28 fh 1.00/11.3
+upd 82/312 step 20748 sps 1 pg 0.010 v 106.272 ent 0.148 aux 0.0000 rnd 0.0107 ret 0.50 fh 1.00/11.4
+upd 83/312 step 21004 sps 1 pg -0.000 v 14.026 ent 0.102 aux 0.0000 rnd 0.0100 ret 0.50 fh 1.00/11.6
+upd 84/312 step 21260 sps 1 pg -0.003 v 19.674 ent 0.055 aux 0.0000 rnd 0.0099 ret 0.50 fh 1.00/11.6
+upd 85/312 step 21516 sps 1 pg -0.003 v 8.182 ent 0.065 aux 0.0000 rnd 0.0128 ret 0.50 fh 1.00/11.6
+upd 86/312 step 21772 sps 1 pg -0.005 v 7.752 ent 0.113 aux 0.0000 rnd 0.0117 ret 0.50 fh 1.00/11.7
+upd 87/312 step 22028 sps 1 pg 0.007 v 9.278 ent 0.058 aux 0.0000 rnd 0.0261 ret 0.50 fh 1.00/11.6
+upd 88/312 step 22284 sps 1 pg -0.000 v 18.068 ent 0.064 aux 0.0000 rnd 0.0105 ret 0.50 fh 1.00/11.6
+upd 89/312 step 22540 sps 1 pg 0.000 v 9.313 ent 0.079 aux 0.0000 rnd 0.0097 ret 0.50 fh 1.00/11.1
+upd 90/312 step 22796 sps 1 pg 0.001 v 73.326 ent 0.097 aux 0.0000 rnd 0.0108 ret 0.36 fh 1.00/11.5
+upd 91/312 step 23052 sps 1 pg -0.000 v 4.856 ent 0.099 aux 0.0000 rnd 0.0091 ret 0.36 fh 1.00/11.3
+upd 92/312 step 23308 sps 1 pg -0.003 v 4.908 ent 0.135 aux 0.0000 rnd 0.0110 ret 0.36 fh 1.00/11.4
+upd 93/312 step 23564 sps 1 pg 0.000 v 4.061 ent 0.108 aux 0.0000 rnd 0.0119 ret 0.36 fh 1.00/11.4
+upd 94/312 step 23820 sps 1 pg -0.001 v 6.714 ent 0.126 aux 0.0000 rnd 0.0135 ret 0.36 fh 1.00/11.5
+upd 95/312 step 24076 sps 1 pg 0.000 v 2.956 ent 0.171 aux 0.0000 rnd 0.0162 ret 0.36 fh 1.00/11.4
+upd 96/312 step 24332 sps 1 pg 0.002 v 2.688 ent 0.415 aux 0.0000 rnd 0.0145 ret 0.36 fh 1.00/10.9
+upd 97/312 step 24588 sps 1 pg 0.001 v 10.738 ent 0.400 aux 0.0000 rnd 0.0230 ret 0.36 fh 1.00/11.7
+upd 98/312 step 24844 sps 1 pg 0.014 v 93.522 ent 0.453 aux 0.0000 rnd 0.0127 ret 0.50 fh 1.00/11.7
+upd 99/312 step 25100 sps 1 pg -0.000 v 8.337 ent 0.441 aux 0.0000 rnd 0.0107 ret 0.50 fh 1.00/11.3
+upd 100/312 step 25356 sps 1 pg 0.009 v 2.790 ent 0.406 aux 0.0000 rnd 0.0103 ret 0.50 fh 1.00/11.3
+!! recovering envs: upd 101 step 86: RuntimeError('adb timed out after 10.0s: adb -s emulator-6554 exec-out screencap')
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/adb_backend.py", line 46, in _adb
+    out = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+  File "/usr/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 2154, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1268, in _check_timeout
+    raise TimeoutExpired(
+    ...<2 lines>...
+            stderr=b''.join(stderr_seq) if stderr_seq else None)
+subprocess.TimeoutExpired: Command '['adb', '-s', 'emulator-6554', 'exec-out', 'screencap']' timed out after 10.0 seconds
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/train.py", line 619, in main
+    next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
+                                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/vector/sync_vector_env.py", line 266, in step
+    ) = self.envs[i].step(action)
+        ~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/common.py", line 512, in step
+    obs, reward, terminated, truncated, info = super().step(action)
+                                               ~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 327, in step
+    return self.env.step(action)
+           ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/stateful_observation.py", line 424, in step
+    obs, reward, terminated, truncated, info = self.env.step(action)
+                                               ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 560, in step
+    observation, reward, terminated, truncated, info = self.env.step(action)
+                                                       ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/env.py", line 348, in step
+    rgb = self.backend.grab_frame()
+  File "/tmp2/b12902046/DRL_final_project/adb_backend.py", line 80, in grab_frame
+    raw = _adb(self.endpoint.adb_serial, "exec-out", "screencap")
+  File "/tmp2/b12902046/DRL_final_project/adb_backend.py", line 48, in _adb
+    raise RuntimeError(f"adb timed out after {timeout}s: {' '.join(cmd)}") from e
+RuntimeError: adb timed out after 10.0s: adb -s emulator-6554 exec-out screencap
+   recovery: emulator-6554 still 'device' after kill — proceeding anyway
+[rank 0] pid=739254 port=6554 log=/tmp2/b12902046/DRL_final/emu_logs/emu_0.log
+[rank 1] pid=739256 port=6556 log=/tmp2/b12902046/DRL_final/emu_logs/emu_1.log
+upd 102/312 step 25786 sps 1 pg -0.004 v 5.381 ent 0.431 aux 0.0000 rnd 0.0106 ret 0.50 fh 1.00/11.9
+upd 103/312 step 26042 sps 1 pg 0.012 v 3.119 ent 0.478 aux 0.0000 rnd 0.0131 ret 0.50 fh 1.00/11.4
+upd 104/312 step 26298 sps 1 pg -0.000 v 9.865 ent 0.439 aux 0.0000 rnd 0.0092 ret 0.50 fh 1.00/11.9
+upd 105/312 step 26554 sps 1 pg -0.003 v 6.707 ent 0.451 aux 0.0000 rnd 0.0106 ret 0.50 fh 1.00/11.3
+upd 106/312 step 26810 sps 1 pg 0.006 v 7.282 ent 0.486 aux 0.0000 rnd 0.0108 ret 0.50 fh 1.00/11.2
+upd 107/312 step 27066 sps 1 pg 0.023 v 15.262 ent 0.560 aux 0.0000 rnd 0.0090 ret 0.50 fh 1.00/10.4
+upd 108/312 step 27322 sps 1 pg 0.000 v 58.618 ent 0.547 aux 0.0000 rnd 0.0104 ret 0.50 fh 1.00/10.8
+upd 109/312 step 27578 sps 1 pg -0.002 v 191.806 ent 0.543 aux 0.0000 rnd 0.0093 ret 0.46 fh 1.00/11.9
+upd 110/312 step 27834 sps 1 pg 0.039 v 9.231 ent 0.609 aux 0.0000 rnd 0.0106 ret 0.46 fh 1.00/10.9
+upd 111/312 step 28090 sps 1 pg 0.000 v 3.419 ent 0.560 aux 0.0000 rnd 0.0095 ret 0.46 fh 1.00/11.5
+upd 112/312 step 28346 sps 1 pg 0.019 v 4.765 ent 0.646 aux 0.0000 rnd 0.0112 ret 0.46 fh 1.00/10.9
+upd 113/312 step 28602 sps 1 pg 0.003 v 5.031 ent 0.640 aux 0.0000 rnd 0.0095 ret 0.46 fh 1.00/11.5
+upd 114/312 step 28858 sps 1 pg -0.011 v 3.843 ent 0.640 aux 0.0000 rnd 0.0095 ret 0.46 fh 1.00/11.0
+upd 115/312 step 29114 sps 1 pg -0.015 v 3.648 ent 0.551 aux 0.0000 rnd 0.0114 ret 0.46 fh 1.00/11.1
+upd 116/312 step 29370 sps 1 pg 0.012 v 4.546 ent 0.601 aux 0.0000 rnd 0.0089 ret 0.46 fh 1.00/11.4
+upd 117/312 step 29626 sps 1 pg -0.003 v 1.856 ent 0.504 aux 0.0000 rnd 0.0123 ret 0.46 fh 1.00/11.2
+upd 118/312 step 29882 sps 1 pg -0.003 v 35.550 ent 0.503 aux 0.0000 rnd 0.0133 ret 0.54 fh 1.00/12.6
+upd 119/312 step 30138 sps 1 pg 0.003 v 2.880 ent 0.458 aux 0.0000 rnd 0.0104 ret 0.54 fh 1.00/11.6
+upd 120/312 step 30394 sps 1 pg 0.022 v 3.160 ent 0.496 aux 0.0000 rnd 0.0099 ret 0.54 fh 1.00/11.5
+upd 121/312 step 30650 sps 1 pg -0.013 v 4.313 ent 0.480 aux 0.0000 rnd 0.0099 ret 0.54 fh 1.00/11.3
+upd 122/312 step 30906 sps 1 pg -0.008 v 4.509 ent 0.529 aux 0.0000 rnd 0.0081 ret 0.54 fh 1.00/11.3
+upd 123/312 step 31162 sps 1 pg 0.009 v 8.848 ent 0.548 aux 0.0000 rnd 0.0104 ret 0.54 fh 1.00/11.2
+upd 124/312 step 31418 sps 1 pg 0.003 v 7.154 ent 0.594 aux 0.0000 rnd 0.0089 ret 0.54 fh 1.00/11.4
+upd 125/312 step 31674 sps 1 pg 0.032 v 4.299 ent 0.658 aux 0.0000 rnd 0.0085 ret 0.54 fh 1.00/11.0
+upd 126/312 step 31930 sps 1 pg 0.016 v 34.341 ent 0.619 aux 0.0000 rnd 0.0110 ret 0.37 fh 1.00/11.5
+upd 127/312 step 32186 sps 1 pg -0.001 v 3.356 ent 0.602 aux 0.0000 rnd 0.0092 ret 0.37 fh 1.00/11.6
+upd 128/312 step 32442 sps 1 pg 0.000 v 3.702 ent 0.600 aux 0.0000 rnd 0.0096 ret 0.37 fh 1.00/11.3
+upd 129/312 step 32698 sps 1 pg -0.000 v 4.123 ent 0.593 aux 0.0000 rnd 0.0085 ret 0.37 fh 1.00/11.6
+upd 130/312 step 32954 sps 1 pg -0.000 v 5.331 ent 0.595 aux 0.0000 rnd 0.0104 ret 0.37 fh 1.00/11.2
+upd 131/312 step 33210 sps 1 pg -0.005 v 4.570 ent 0.558 aux 0.0000 rnd 0.0096 ret 0.37 fh 1.00/11.6
+upd 132/312 step 33466 sps 1 pg 0.005 v 7.166 ent 0.566 aux 0.0000 rnd 0.0097 ret 0.37 fh 1.00/11.5
+upd 133/312 step 33722 sps 1 pg 0.006 v 5.070 ent 0.625 aux 0.0000 rnd 0.0091 ret 0.37 fh 1.00/11.7
+upd 134/312 step 33978 sps 1 pg 0.000 v 39.893 ent 0.622 aux 0.0000 rnd 0.0088 ret 0.44 fh 1.00/11.2
+upd 135/312 step 34234 sps 1 pg 0.047 v 21.014 ent 0.543 aux 0.0000 rnd 0.0099 ret 0.44 fh 1.00/11.8
+upd 136/312 step 34490 sps 1 pg -0.000 v 11.327 ent 0.582 aux 0.0000 rnd 0.0103 ret 0.44 fh 1.00/11.4
+upd 137/312 step 34746 sps 1 pg 0.008 v 11.264 ent 0.616 aux 0.0000 rnd 0.0093 ret 0.44 fh 1.00/11.8
+upd 138/312 step 35002 sps 1 pg 0.001 v 7.170 ent 0.631 aux 0.0000 rnd 0.0098 ret 0.44 fh 1.00/11.4
+upd 139/312 step 35258 sps 1 pg 0.002 v 8.482 ent 0.607 aux 0.0000 rnd 0.0112 ret 0.44 fh 1.00/12.0
+upd 140/312 step 35514 sps 1 pg 0.043 v 12.073 ent 0.514 aux 0.0000 rnd 0.0095 ret 0.44 fh 1.00/11.4
+upd 141/312 step 35770 sps 1 pg 0.084 v 17.115 ent 0.677 aux 0.0000 rnd 0.0089 ret 0.44 fh 1.00/11.9
+upd 142/312 step 36026 sps 1 pg 0.011 v 136.867 ent 0.689 aux 0.0000 rnd 0.0085 ret 0.44 fh 1.00/11.5
+upd 143/312 step 36282 sps 1 pg 0.000 v 6.735 ent 0.682 aux 0.0000 rnd 0.0096 ret 0.44 fh 1.00/11.8
+upd 144/312 step 36538 sps 1 pg 0.013 v 7.622 ent 0.693 aux 0.0000 rnd 0.0083 ret 0.44 fh 1.00/11.4
+upd 145/312 step 36794 sps 1 pg 0.001 v 6.690 ent 0.692 aux 0.0000 rnd 0.0092 ret 0.44 fh 1.00/11.9
+upd 146/312 step 37050 sps 1 pg -0.011 v 6.272 ent 0.693 aux 0.0000 rnd 0.0089 ret 0.44 fh 1.00/11.4
+upd 147/312 step 37306 sps 1 pg 0.068 v 8.566 ent 0.636 aux 0.0000 rnd 0.0094 ret 0.44 fh 1.00/12.2
+upd 148/312 step 37562 sps 1 pg 0.016 v 7.236 ent 0.662 aux 0.0000 rnd 0.0095 ret 0.44 fh 1.00/11.8
+upd 149/312 step 37818 sps 1 pg 0.013 v 12.102 ent 0.670 aux 0.0000 rnd 0.0105 ret 0.44 fh 1.00/11.9
+upd 150/312 step 38074 sps 1 pg 0.000 v 134.793 ent 0.638 aux 0.0000 rnd 0.0098 ret 0.53 fh 1.00/11.5
+upd 151/312 step 38330 sps 1 pg -0.000 v 27.720 ent 0.638 aux 0.0000 rnd 0.0081 ret 0.53 fh 1.00/12.4
+upd 152/312 step 38586 sps 1 pg -0.002 v 27.585 ent 0.647 aux 0.0000 rnd 0.0085 ret 0.53 fh 1.00/10.8
+!! recovering envs: upd 153 step 125: RuntimeError('adb timed out after 10.0s: adb -s emulator-6556 exec-out screencap')
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/adb_backend.py", line 46, in _adb
+    out = subprocess.run(cmd, capture_output=True, timeout=timeout, check=False)
+  File "/usr/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 2154, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1268, in _check_timeout
+    raise TimeoutExpired(
+    ...<2 lines>...
+            stderr=b''.join(stderr_seq) if stderr_seq else None)
+subprocess.TimeoutExpired: Command '['adb', '-s', 'emulator-6556', 'exec-out', 'screencap']' timed out after 10.0 seconds
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/train.py", line 619, in main
+    next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
+                                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/vector/sync_vector_env.py", line 266, in step
+    ) = self.envs[i].step(action)
+        ~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/common.py", line 512, in step
+    obs, reward, terminated, truncated, info = super().step(action)
+                                               ~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 327, in step
+    return self.env.step(action)
+           ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/stateful_observation.py", line 424, in step
+    obs, reward, terminated, truncated, info = self.env.step(action)
+                                               ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 560, in step
+    observation, reward, terminated, truncated, info = self.env.step(action)
+                                                       ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/env.py", line 348, in step
+    rgb = self.backend.grab_frame()
+  File "/tmp2/b12902046/DRL_final_project/adb_backend.py", line 80, in grab_frame
+    raw = _adb(self.endpoint.adb_serial, "exec-out", "screencap")
+  File "/tmp2/b12902046/DRL_final_project/adb_backend.py", line 48, in _adb
+    raise RuntimeError(f"adb timed out after {timeout}s: {' '.join(cmd)}") from e
+RuntimeError: adb timed out after 10.0s: adb -s emulator-6556 exec-out screencap
+[rank 0] pid=598854 port=6554 log=/tmp2/b12902046/DRL_final/emu_logs/emu_0.log
+[rank 1] pid=598855 port=6556 log=/tmp2/b12902046/DRL_final/emu_logs/emu_1.log
+upd 154/312 step 39094 sps 1 pg 0.016 v 9.793 ent 0.677 aux 0.0000 rnd 0.0103 ret 0.53 fh 1.00/12.1
+upd 155/312 step 39350 sps 1 pg 0.021 v 10.485 ent 0.682 aux 0.0000 rnd 0.0093 ret 0.53 fh 1.00/11.7
+upd 156/312 step 39606 sps 1 pg 0.007 v 6.851 ent 0.688 aux 0.0000 rnd 0.0100 ret 0.53 fh 1.00/11.8
+upd 157/312 step 39862 sps 1 pg 0.036 v 4.314 ent 0.677 aux 0.0000 rnd 0.0094 ret 0.53 fh 1.00/11.3
+upd 158/312 step 40118 sps 1 pg -0.005 v 9.524 ent 0.655 aux 0.0000 rnd 0.0081 ret 0.53 fh 1.00/11.7
+upd 159/312 step 40374 sps 1 pg -0.005 v 4.102 ent 0.657 aux 0.0000 rnd 0.0076 ret 0.53 fh 1.00/11.4
+upd 160/312 step 40630 sps 1 pg 0.008 v 4.400 ent 0.668 aux 0.0000 rnd 0.0112 ret 0.53 fh 1.00/12.2
+upd 161/312 step 40886 sps 1 pg 0.018 v 97.190 ent 0.693 aux 0.0000 rnd 0.0099 ret 0.55 fh 1.00/11.3
+upd 162/312 step 41142 sps 1 pg -0.004 v 4.515 ent 0.692 aux 0.0000 rnd 0.0084 ret 0.55 fh 1.00/11.7
+upd 163/312 step 41398 sps 1 pg 0.012 v 7.694 ent 0.690 aux 0.0000 rnd 0.0098 ret 0.55 fh 1.00/11.8
+upd 164/312 step 41654 sps 1 pg 0.011 v 8.663 ent 0.682 aux 0.0000 rnd 0.0099 ret 0.55 fh 1.00/12.1
+upd 165/312 step 41910 sps 1 pg -0.004 v 4.401 ent 0.687 aux 0.0000 rnd 0.0098 ret 0.55 fh 1.00/11.5
+upd 166/312 step 42166 sps 1 pg 0.000 v 3.769 ent 0.688 aux 0.0000 rnd 0.0105 ret 0.55 fh 1.00/11.7
+upd 167/312 step 42422 sps 1 pg 0.055 v 4.524 ent 0.680 aux 0.0000 rnd 0.0087 ret 0.55 fh 1.00/11.7
+upd 168/312 step 42678 sps 1 pg -0.000 v 3.720 ent 0.676 aux 0.0000 rnd 0.0079 ret 0.55 fh 1.00/11.8
+upd 169/312 step 42934 sps 1 pg 0.001 v 5.422 ent 0.688 aux 0.0000 rnd 0.0100 ret 0.55 fh 1.00/11.9
+upd 170/312 step 43190 sps 1 pg -0.005 v 4.171 ent 0.693 aux 0.0000 rnd 0.0098 ret 0.68 fh 1.00/12.0
+upd 171/312 step 43446 sps 1 pg 0.012 v 3.592 ent 0.687 aux 0.0000 rnd 0.0101 ret 0.68 fh 1.00/12.1
+upd 172/312 step 43702 sps 1 pg 0.048 v 3.159 ent 0.617 aux 0.0000 rnd 0.0084 ret 0.68 fh 1.00/11.8
+upd 173/312 step 43958 sps 1 pg 0.010 v 4.332 ent 0.580 aux 0.0000 rnd 0.0087 ret 0.68 fh 1.00/11.8
+upd 174/312 step 44214 sps 1 pg -0.006 v 2.480 ent 0.594 aux 0.0000 rnd 0.0097 ret 0.68 fh 1.00/11.9
+upd 175/312 step 44470 sps 1 pg 0.002 v 3.153 ent 0.602 aux 0.0000 rnd 0.0101 ret 0.68 fh 1.00/12.8
+upd 176/312 step 44726 sps 1 pg -0.006 v 6.905 ent 0.589 aux 0.0000 rnd 0.0092 ret 0.68 fh 1.00/12.1
+upd 177/312 step 44982 sps 1 pg 0.026 v 3.050 ent 0.544 aux 0.0000 rnd 0.0199 ret 0.68 fh 1.00/11.9
+upd 178/312 step 45238 sps 1 pg -0.001 v 9.583 ent 0.539 aux 0.0000 rnd 0.0099 ret 0.81 fh 1.00/11.7
+upd 179/312 step 45494 sps 1 pg -0.000 v 4.567 ent 0.543 aux 0.0000 rnd 0.0100 ret 0.81 fh 1.00/12.1
+upd 180/312 step 45750 sps 1 pg -0.006 v 5.859 ent 0.476 aux 0.0000 rnd 0.0134 ret 0.81 fh 1.00/11.9
+upd 181/312 step 46006 sps 1 pg 0.008 v 4.714 ent 0.451 aux 0.0000 rnd 0.0235 ret 0.81 fh 1.00/12.1
+upd 182/312 step 46262 sps 1 pg -0.003 v 8.190 ent 0.423 aux 0.0000 rnd 0.0098 ret 0.81 fh 1.00/11.6
+upd 183/312 step 46518 sps 1 pg -0.004 v 3.820 ent 0.451 aux 0.0000 rnd 0.0100 ret 0.81 fh 1.00/12.1
+upd 184/312 step 46774 sps 1 pg -0.005 v 4.777 ent 0.317 aux 0.0000 rnd 0.0093 ret 0.81 fh 1.00/11.9
+upd 185/312 step 47030 sps 1 pg -0.015 v 3.840 ent 0.339 aux 0.0000 rnd 0.0088 ret 0.81 fh 1.00/12.1
+upd 186/312 step 47286 sps 1 pg -0.004 v 67.256 ent 0.363 aux 0.0000 rnd 0.0100 ret 0.70 fh 1.00/12.0
+upd 187/312 step 47542 sps 1 pg 0.025 v 2.321 ent 0.332 aux 0.0000 rnd 0.0083 ret 0.70 fh 1.00/11.6
+upd 188/312 step 47798 sps 1 pg -0.000 v 3.936 ent 0.328 aux 0.0000 rnd 0.0081 ret 0.70 fh 1.00/11.7
+upd 189/312 step 48054 sps 1 pg -0.001 v 4.219 ent 0.331 aux 0.0000 rnd 0.0102 ret 0.70 fh 1.00/11.7
+upd 190/312 step 48310 sps 1 pg 0.005 v 2.663 ent 0.356 aux 0.0000 rnd 0.0096 ret 0.70 fh 1.00/11.3
+upd 191/312 step 48566 sps 1 pg 0.002 v 4.503 ent 0.382 aux 0.0000 rnd 0.0102 ret 0.70 fh 1.00/11.7
+upd 192/312 step 48822 sps 1 pg 0.000 v 4.001 ent 0.385 aux 0.0000 rnd 0.0087 ret 0.70 fh 1.00/11.8
+upd 193/312 step 49078 sps 1 pg 0.001 v 3.257 ent 0.373 aux 0.0000 rnd 0.0098 ret 0.70 fh 1.00/11.9
+upd 194/312 step 49334 sps 1 pg -0.008 v 56.250 ent 0.485 aux 0.0000 rnd 0.0076 ret 0.48 fh 1.00/11.9
+upd 195/312 step 49590 sps 1 pg -0.006 v 9.692 ent 0.520 aux 0.0000 rnd 0.0074 ret 0.48 fh 1.00/11.5
+upd 196/312 step 49846 sps 1 pg 0.011 v 11.861 ent 0.550 aux 0.0000 rnd 0.0092 ret 0.48 fh 1.00/11.7
+upd 197/312 step 50102 sps 1 pg -0.004 v 9.848 ent 0.538 aux 0.0000 rnd 0.0092 ret 0.48 fh 1.00/12.0
+upd 198/312 step 50358 sps 1 pg -0.002 v 6.405 ent 0.527 aux 0.0000 rnd 0.0093 ret 0.48 fh 1.00/12.9
+upd 199/312 step 50614 sps 1 pg -0.007 v 4.296 ent 0.510 aux 0.0000 rnd 0.0092 ret 0.48 fh 1.00/11.8
+upd 200/312 step 50870 sps 1 pg 0.009 v 5.386 ent 0.561 aux 0.0000 rnd 0.0082 ret 0.48 fh 1.00/11.7
+upd 201/312 step 51126 sps 1 pg -0.001 v 6.231 ent 0.554 aux 0.0000 rnd 0.0066 ret 0.48 fh 1.00/11.6
+upd 202/312 step 51382 sps 1 pg -0.004 v 37.436 ent 0.580 aux 0.0000 rnd 0.0096 ret 0.44 fh 1.00/11.9
+upd 203/312 step 51638 sps 1 pg -0.007 v 2.531 ent 0.549 aux 0.0000 rnd 0.0101 ret 0.44 fh 1.00/11.4
+upd 204/312 step 51894 sps 1 pg -0.013 v 2.947 ent 0.486 aux 0.0000 rnd 0.0082 ret 0.44 fh 1.00/11.4
+upd 205/312 step 52150 sps 1 pg -0.000 v 2.269 ent 0.528 aux 0.0000 rnd 0.0104 ret 0.44 fh 1.00/12.6
+upd 206/312 step 52406 sps 1 pg -0.006 v 4.446 ent 0.542 aux 0.0000 rnd 0.0089 ret 0.44 fh 1.00/11.1
+upd 207/312 step 52662 sps 1 pg 0.006 v 78.125 ent 0.440 aux 0.0000 rnd 0.1074 ret 0.44 fh 0.63/6.4
+!! recovering envs: upd 208 step 85: RuntimeError("env.step(): 180 consecutive blank frames from EmulatorEndpoint(adb_serial='emulator-6554', minicap_port=0, minitouch_port=0, snapshot_names=['clean_boot_v8']) — vision pipeline returned no detections; needs hard restart")
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/train.py", line 619, in main
+    next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
+                                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/vector/sync_vector_env.py", line 266, in step
+    ) = self.envs[i].step(action)
+        ~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/common.py", line 512, in step
+    obs, reward, terminated, truncated, info = super().step(action)
+                                               ~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 327, in step
+    return self.env.step(action)
+           ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/stateful_observation.py", line 424, in step
+    obs, reward, terminated, truncated, info = self.env.step(action)
+                                               ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 560, in step
+    observation, reward, terminated, truncated, info = self.env.step(action)
+                                                       ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/env.py", line 398, in step
+    raise RuntimeError(
+    ...<3 lines>...
+    )
+RuntimeError: env.step(): 180 consecutive blank frames from EmulatorEndpoint(adb_serial='emulator-6554', minicap_port=0, minitouch_port=0, snapshot_names=['clean_boot_v8']) — vision pipeline returned no detections; needs hard restart
+[rank 0] pid=3869656 port=6554 log=/tmp2/b12902046/DRL_final/emu_logs/emu_0.log
+[rank 1] pid=3869658 port=6556 log=/tmp2/b12902046/DRL_final/emu_logs/emu_1.log
+upd 209/312 step 53090 sps 1 pg 0.014 v 3.619 ent 0.465 aux 0.0000 rnd 0.0112 ret 0.44 fh 1.00/12.0
+upd 210/312 step 53346 sps 1 pg -0.003 v 4.273 ent 0.417 aux 0.0000 rnd 0.0394 ret 0.44 fh 1.00/12.7
+upd 211/312 step 53602 sps 1 pg 0.004 v 2.409 ent 0.432 aux 0.0000 rnd 0.0099 ret 0.44 fh 1.00/12.0
+upd 212/312 step 53858 sps 1 pg 0.004 v 2.765 ent 0.469 aux 0.0000 rnd 0.0105 ret 0.44 fh 1.00/11.7
+upd 213/312 step 54114 sps 1 pg 0.005 v 0.774 ent 0.495 aux 0.0000 rnd 0.0109 ret 0.44 fh 1.00/11.8
+upd 214/312 step 54370 sps 1 pg 0.001 v 1.282 ent 0.476 aux 0.0000 rnd 0.0092 ret 0.44 fh 1.00/11.2
+upd 215/312 step 54626 sps 1 pg -0.006 v 3.126 ent 0.536 aux 0.0000 rnd 0.0076 ret 0.44 fh 1.00/11.4
+upd 216/312 step 54882 sps 1 pg 0.003 v 70.290 ent 0.565 aux 0.0000 rnd 0.0086 ret 0.26 fh 1.00/10.9
+upd 217/312 step 55138 sps 1 pg -0.005 v 6.791 ent 0.571 aux 0.0000 rnd 0.0095 ret 0.26 fh 1.00/11.7
+upd 218/312 step 55394 sps 1 pg -0.009 v 12.402 ent 0.603 aux 0.0000 rnd 0.0081 ret 0.26 fh 1.00/11.6
+upd 219/312 step 55650 sps 1 pg 0.002 v 8.959 ent 0.590 aux 0.0000 rnd 0.0106 ret 0.26 fh 1.00/11.7
+upd 220/312 step 55906 sps 1 pg -0.001 v 7.802 ent 0.603 aux 0.0000 rnd 0.0082 ret 0.26 fh 1.00/11.6
+upd 221/312 step 56162 sps 1 pg -0.020 v 8.197 ent 0.575 aux 0.0000 rnd 0.0089 ret 0.26 fh 1.00/11.5
+upd 222/312 step 56418 sps 1 pg -0.003 v 4.909 ent 0.609 aux 0.0000 rnd 0.0092 ret 0.26 fh 1.00/11.6
+upd 223/312 step 56674 sps 1 pg 0.003 v 4.753 ent 0.620 aux 0.0000 rnd 0.0093 ret 0.26 fh 1.00/11.8
+upd 224/312 step 56930 sps 1 pg -0.003 v 5.110 ent 0.602 aux 0.0000 rnd 0.0092 ret 0.26 fh 1.00/11.2
+upd 225/312 step 57186 sps 1 pg 0.002 v 8.323 ent 0.592 aux 0.0000 rnd 0.0092 ret 0.29 fh 1.00/11.4
+upd 226/312 step 57442 sps 1 pg -0.002 v 10.319 ent 0.609 aux 0.0000 rnd 0.0086 ret 0.29 fh 1.00/11.9
+upd 227/312 step 57698 sps 1 pg -0.003 v 7.638 ent 0.609 aux 0.0000 rnd 0.0088 ret 0.29 fh 1.00/11.4
+upd 228/312 step 57954 sps 1 pg 0.021 v 10.317 ent 0.555 aux 0.0000 rnd 0.0075 ret 0.29 fh 1.00/11.8
+upd 229/312 step 58210 sps 1 pg 0.029 v 12.824 ent 0.630 aux 0.0000 rnd 0.0082 ret 0.29 fh 1.00/11.4
+upd 230/312 step 58466 sps 1 pg -0.010 v 8.755 ent 0.654 aux 0.0000 rnd 0.0086 ret 0.29 fh 1.00/11.8
+upd 231/312 step 58722 sps 1 pg -0.007 v 32.611 ent 0.670 aux 0.0000 rnd 0.0079 ret 0.29 fh 1.00/11.4
+upd 232/312 step 58978 sps 1 pg -0.000 v 17.629 ent 0.672 aux 0.0000 rnd 0.0090 ret 0.29 fh 1.00/11.9
+upd 233/312 step 59234 sps 1 pg 0.008 v 22.103 ent 0.642 aux 0.0000 rnd 0.0082 ret 0.17 fh 1.00/12.3
+upd 234/312 step 59490 sps 1 pg -0.007 v 24.107 ent 0.650 aux 0.0000 rnd 0.0076 ret 0.17 fh 1.00/11.1
+upd 235/312 step 59746 sps 1 pg -0.005 v 11.282 ent 0.673 aux 0.0000 rnd 0.0071 ret 0.17 fh 1.00/10.8
+upd 236/312 step 60002 sps 1 pg -0.018 v 12.484 ent 0.688 aux 0.0000 rnd 0.0065 ret 0.17 fh 1.00/10.9
+upd 237/312 step 60258 sps 1 pg 0.008 v 9.505 ent 0.693 aux 0.0000 rnd 0.0076 ret 0.17 fh 1.00/11.6
+upd 238/312 step 60514 sps 1 pg 0.002 v 7.476 ent 0.693 aux 0.0000 rnd 0.0087 ret 0.17 fh 1.00/11.4
+upd 239/312 step 60770 sps 1 pg 0.015 v 7.190 ent 0.686 aux 0.0000 rnd 0.0087 ret 0.17 fh 1.00/12.2
+upd 240/312 step 61026 sps 1 pg 0.003 v 5.172 ent 0.685 aux 0.0000 rnd 0.0088 ret 0.17 fh 1.00/11.4
+upd 241/312 step 61282 sps 1 pg -0.008 v 43.809 ent 0.656 aux 0.0000 rnd 0.0088 ret 0.21 fh 1.00/12.7
+upd 242/312 step 61538 sps 1 pg 0.001 v 5.603 ent 0.655 aux 0.0000 rnd 0.0083 ret 0.21 fh 1.00/11.5
+upd 243/312 step 61794 sps 1 pg 0.018 v 5.183 ent 0.631 aux 0.0000 rnd 0.0081 ret 0.21 fh 1.00/11.4
+upd 244/312 step 62050 sps 1 pg 0.001 v 6.380 ent 0.623 aux 0.0000 rnd 0.0073 ret 0.21 fh 1.00/10.9
+upd 245/312 step 62306 sps 1 pg 0.000 v 3.441 ent 0.621 aux 0.0000 rnd 0.0092 ret 0.21 fh 1.00/11.5
+upd 246/312 step 62562 sps 1 pg 0.009 v 4.846 ent 0.615 aux 0.0000 rnd 0.0074 ret 0.21 fh 1.00/11.2
+upd 247/312 step 62818 sps 1 pg 0.007 v 3.530 ent 0.559 aux 0.0000 rnd 0.0097 ret 0.21 fh 1.00/11.4
+upd 248/312 step 63074 sps 1 pg 0.005 v 3.748 ent 0.532 aux 0.0000 rnd 0.0078 ret 0.21 fh 1.00/11.6
+upd 249/312 step 63330 sps 1 pg -0.005 v 60.851 ent 0.504 aux 0.0000 rnd 0.0094 ret 0.29 fh 1.00/11.4
+upd 250/312 step 63586 sps 1 pg -0.013 v 2.477 ent 0.459 aux 0.0000 rnd 0.0093 ret 0.29 fh 1.00/12.0
+upd 251/312 step 63842 sps 1 pg -0.002 v 3.199 ent 0.444 aux 0.0000 rnd 0.0066 ret 0.29 fh 1.00/11.7
+upd 252/312 step 64098 sps 1 pg -0.005 v 3.145 ent 0.410 aux 0.0000 rnd 0.0084 ret 0.29 fh 1.00/11.3
+upd 253/312 step 64354 sps 1 pg 0.001 v 3.341 ent 0.424 aux 0.0000 rnd 0.0080 ret 0.29 fh 1.00/11.8
+upd 254/312 step 64610 sps 1 pg -0.003 v 5.142 ent 0.441 aux 0.0000 rnd 0.0080 ret 0.29 fh 1.00/12.3
+upd 255/312 step 64866 sps 1 pg 0.009 v 4.379 ent 0.395 aux 0.0000 rnd 0.0092 ret 0.29 fh 1.00/11.8
+upd 256/312 step 65122 sps 1 pg 0.008 v 6.835 ent 0.453 aux 0.0000 rnd 0.0073 ret 0.29 fh 1.00/11.7
+upd 257/312 step 65378 sps 1 pg -0.004 v 105.658 ent 0.493 aux 0.0000 rnd 0.0069 ret 0.27 fh 1.00/11.6
+upd 258/312 step 65634 sps 1 pg 0.012 v 12.757 ent 0.535 aux 0.0000 rnd 0.0091 ret 0.27 fh 1.00/12.7
+upd 259/312 step 65890 sps 1 pg -0.003 v 5.314 ent 0.522 aux 0.0000 rnd 0.0086 ret 0.27 fh 1.00/12.1
+upd 260/312 step 66146 sps 1 pg -0.002 v 3.608 ent 0.546 aux 0.0000 rnd 0.0084 ret 0.27 fh 1.00/11.6
+upd 261/312 step 66402 sps 1 pg 0.002 v 3.302 ent 0.562 aux 0.0000 rnd 0.0082 ret 0.27 fh 1.00/12.2
+upd 262/312 step 66658 sps 1 pg 0.002 v 111.890 ent 0.533 aux 0.0000 rnd 0.0287 ret 0.27 fh 0.96/10.8
+upd 263/312 step 66914 sps 1 pg 0.000 v 5.877 ent 0.443 aux 0.0000 rnd 0.0850 ret 0.27 fh 0.50/6.3
+!! recovering envs: upd 264 step 42: RuntimeError("env.step(): 180 consecutive blank frames from EmulatorEndpoint(adb_serial='emulator-6554', minicap_port=0, minitouch_port=0, snapshot_names=['clean_boot_v8']) — vision pipeline returned no detections; needs hard restart")
+Traceback (most recent call last):
+  File "/tmp2/b12902046/DRL_final_project/train.py", line 619, in main
+    next_obs_np, reward, term, trunc, info = envs.step(action.cpu().numpy())
+                                             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/vector/sync_vector_env.py", line 266, in step
+    ) = self.envs[i].step(action)
+        ~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/common.py", line 512, in step
+    obs, reward, terminated, truncated, info = super().step(action)
+                                               ~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 327, in step
+    return self.env.step(action)
+           ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/wrappers/stateful_observation.py", line 424, in step
+    obs, reward, terminated, truncated, info = self.env.step(action)
+                                               ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/.venv/lib/python3.14/site-packages/gymnasium/core.py", line 560, in step
+    observation, reward, terminated, truncated, info = self.env.step(action)
+                                                       ~~~~~~~~~~~~~^^^^^^^^
+  File "/tmp2/b12902046/DRL_final_project/env.py", line 398, in step
+    raise RuntimeError(
+    ...<3 lines>...
+    )
+RuntimeError: env.step(): 180 consecutive blank frames from EmulatorEndpoint(adb_serial='emulator-6554', minicap_port=0, minitouch_port=0, snapshot_names=['clean_boot_v8']) — vision pipeline returned no detections; needs hard restart
+[rank 0] pid=3353710 port=6554 log=/tmp2/b12902046/DRL_final/emu_logs/emu_0.log
+[rank 1] pid=3353714 port=6556 log=/tmp2/b12902046/DRL_final/emu_logs/emu_1.log
+upd 265/312 step 67256 sps 1 pg -0.023 v 5.934 ent 0.601 aux 0.0000 rnd 0.0177 ret 0.27 fh 1.00/11.9
+upd 266/312 step 67512 sps 1 pg 0.006 v 2.789 ent 0.621 aux 0.0000 rnd 0.0185 ret 0.27 fh 1.00/11.5
+upd 267/312 step 67768 sps 1 pg -0.000 v 1.511 ent 0.619 aux 0.0000 rnd 0.0099 ret 0.27 fh 1.00/11.9
+upd 268/312 step 68024 sps 1 pg -0.005 v 1.783 ent 0.631 aux 0.0000 rnd 0.0103 ret 0.27 fh 1.00/11.5
+upd 269/312 step 68280 sps 1 pg 0.003 v 1.037 ent 0.636 aux 0.0000 rnd 0.0088 ret 0.27 fh 1.00/11.9
+upd 270/312 step 68536 sps 1 pg -0.009 v 1.942 ent 0.609 aux 0.0000 rnd 0.0093 ret 0.27 fh 1.00/11.4
+upd 271/312 step 68792 sps 1 pg 0.002 v 3.827 ent 0.598 aux 0.0000 rnd 0.0087 ret 0.27 fh 1.00/11.8
+upd 272/312 step 69048 sps 1 pg 0.006 v 41.767 ent 0.622 aux 0.0000 rnd 0.0087 ret 0.29 fh 1.00/11.5
+upd 273/312 step 69304 sps 1 pg -0.007 v 6.137 ent 0.596 aux 0.0000 rnd 0.0070 ret 0.29 fh 1.00/11.7
+upd 274/312 step 69560 sps 1 pg 0.002 v 2.577 ent 0.591 aux 0.0000 rnd 0.0093 ret 0.29 fh 1.00/11.7
+upd 275/312 step 69816 sps 1 pg -0.002 v 3.686 ent 0.623 aux 0.0000 rnd 0.0080 ret 0.29 fh 1.00/11.3
+upd 276/312 step 70072 sps 1 pg -0.016 v 3.261 ent 0.589 aux 0.0000 rnd 0.0103 ret 0.29 fh 1.00/11.6
+upd 277/312 step 70328 sps 1 pg 0.022 v 5.529 ent 0.556 aux 0.0000 rnd 0.0079 ret 0.29 fh 1.00/11.7
+upd 278/312 step 70584 sps 1 pg -0.000 v 4.927 ent 0.585 aux 0.0000 rnd 0.0079 ret 0.29 fh 1.00/11.4
+upd 279/312 step 70840 sps 1 pg -0.009 v 4.279 ent 0.545 aux 0.0000 rnd 0.0075 ret 0.29 fh 1.00/11.3
+upd 280/312 step 71096 sps 1 pg -0.007 v 2.984 ent 0.598 aux 0.0000 rnd 0.0082 ret 0.29 fh 1.00/11.2
+upd 281/312 step 71352 sps 1 pg 0.002 v 4.973 ent 0.614 aux 0.0000 rnd 0.0084 ret 0.41 fh 1.00/12.4
+upd 282/312 step 71608 sps 1 pg 0.002 v 7.082 ent 0.625 aux 0.0000 rnd 0.0095 ret 0.41 fh 1.00/11.9
+upd 283/312 step 71864 sps 1 pg -0.008 v 5.612 ent 0.637 aux 0.0000 rnd 0.0080 ret 0.41 fh 1.00/11.2
+upd 284/312 step 72120 sps 1 pg 0.003 v 6.672 ent 0.659 aux 0.0000 rnd 0.0068 ret 0.41 fh 1.00/11.5
+upd 285/312 step 72376 sps 1 pg -0.007 v 3.434 ent 0.643 aux 0.0000 rnd 0.0083 ret 0.41 fh 1.00/11.2
+upd 286/312 step 72632 sps 1 pg 0.000 v 7.371 ent 0.639 aux 0.0000 rnd 0.0079 ret 0.41 fh 1.00/11.3
+upd 287/312 step 72888 sps 1 pg 0.013 v 4.540 ent 0.596 aux 0.0000 rnd 0.0089 ret 0.41 fh 1.00/11.8
+upd 288/312 step 73144 sps 1 pg -0.001 v 3.348 ent 0.606 aux 0.0000 rnd 0.0092 ret 0.41 fh 1.00/11.9
+upd 289/312 step 73400 sps 1 pg 0.002 v 6.392 ent 0.598 aux 0.0000 rnd 0.0082 ret 0.58 fh 1.00/11.5
+upd 290/312 step 73656 sps 1 pg -0.001 v 8.569 ent 0.602 aux 0.0000 rnd 0.0088 ret 0.58 fh 1.00/11.6
+upd 291/312 step 73912 sps 1 pg 0.000 v 11.431 ent 0.597 aux 0.0000 rnd 0.0081 ret 0.58 fh 1.00/11.7
+upd 292/312 step 74168 sps 1 pg -0.001 v 11.945 ent 0.588 aux 0.0000 rnd 0.0087 ret 0.58 fh 1.00/11.7
+upd 293/312 step 74424 sps 1 pg -0.008 v 7.377 ent 0.608 aux 0.0000 rnd 0.0094 ret 0.58 fh 1.00/11.7
+upd 294/312 step 74680 sps 1 pg 0.007 v 9.452 ent 0.628 aux 0.0000 rnd 0.0078 ret 0.58 fh 1.00/11.2
+upd 295/312 step 74936 sps 1 pg 0.002 v 5.438 ent 0.653 aux 0.0000 rnd 0.0096 ret 0.58 fh 1.00/11.4
+upd 296/312 step 75192 sps 1 pg -0.003 v 5.521 ent 0.657 aux 0.0000 rnd 0.0072 ret 0.58 fh 1.00/11.4
+upd 297/312 step 75448 sps 1 pg 0.000 v 102.143 ent 0.662 aux 0.0000 rnd 0.0072 ret 0.52 fh 1.00/11.7
+upd 298/312 step 75704 sps 1 pg 0.005 v 6.939 ent 0.650 aux 0.0000 rnd 0.0081 ret 0.52 fh 1.00/11.5
+upd 299/312 step 75960 sps 1 pg -0.003 v 10.384 ent 0.643 aux 0.0000 rnd 0.0085 ret 0.52 fh 1.00/11.9
+upd 300/312 step 76216 sps 1 pg 0.000 v 14.139 ent 0.648 aux 0.0000 rnd 0.0094 ret 0.52 fh 1.00/11.4
+upd 301/312 step 76472 sps 1 pg 0.002 v 16.456 ent 0.653 aux 0.0000 rnd 0.0075 ret 0.52 fh 1.00/11.9
+upd 302/312 step 76728 sps 1 pg -0.000 v 8.295 ent 0.662 aux 0.0000 rnd 0.0080 ret 0.52 fh 1.00/11.4
+upd 303/312 step 76984 sps 1 pg -0.009 v 8.752 ent 0.680 aux 0.0000 rnd 0.0090 ret 0.52 fh 1.00/11.9
+upd 304/3

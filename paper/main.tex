@@ -1,0 +1,320 @@
+% NTU-DRL-MiniConf 2026 submission.
+% Uses the NeurIPS 2026 template (download neurips_2026.sty from the official
+% NeurIPS site, or use OverLeaf's "New Project from Template" → NeurIPS 2026).
+%
+% Anonymous submission: leave \usepackage{neurips_2026} (NOT the `final` option)
+% so author names are hidden and line numbers are visible for reviewers.
+\documentclass{article}
+
+% Anonymous + line numbers (default behaviour without `final` option).
+\usepackage{neurips_2026}
+% For camera-ready / non-anonymous, switch to:
+% \usepackage[final]{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% Use this command for short paper notes / TODOs during drafting.
+% Remove or set to {} for final submission.
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+
+\title{Exploration vs.\ Robustness in Auxiliary Tasks:\\
+An Empirical Study of Object-Centric and Pixel-Reconstruction Targets under Intrinsic Motivation}
+
+% Anonymous authors block (do not edit during anonymous review).
+\author{%
+  Anonymous Authors\\
+  Affiliations withheld during double-blind review\\
+}
+
+\begin{document}
+
+\maketitle
+
+% =====================================================================
+\begin{abstract}
+Auxiliary tasks for representation learning are widely advocated for reinforcement learning in
+visually rich, chaotic-physics environments, yet most evaluations rely on benchmark simulators
+where the action--reward link is by construction non-degenerate. We study three auxiliary
+configurations---no auxiliary task (baseline), object-centric pose prediction (OCA), and
+next-frame pixel reconstruction (DPR)---in a real commercial mobile basketball game
+(Bouncy Basketball) running on Android emulators. We find that the environment's autopilot
+opponent and player-team auto-control jointly create a near-degenerate reward landscape in
+which uniform-random policies are locally near-optimal; consequently, PPO with auxiliary tasks
+alone fails to commit to a non-trivial policy. Adding Random Network Distillation (RND) as an
+intrinsic reward stream restores PPO commitment and yields measurable gains, but the
+relative ordering of the three auxiliary configurations differs between training-time (rolling
+returns) and deterministic evaluation. We additionally contribute (i) a lightweight CV-pipeline
+object-centric target requiring zero supervision, and (ii) a diagnostic protocol
+(\texttt{diag\_actions}) for detecting degenerate reward landscapes before training.
+% TODO refine after final eval numbers
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+% TODO 3-4 paragraphs:
+% Paragraph 1: motivation -- chaotic physics RL is hard, aux tasks help in benchmarks
+% Paragraph 2: but real commercial games introduce engineering challenges that toy benchmarks hide
+% Paragraph 3: open question -- does aux task target structure (object-centric vs pixel) matter on real games?
+% Paragraph 4: contributions of this paper
+
+Model-free deep reinforcement learning struggles with chaotic, physics-based environments
+where small differences in initial state or action timing produce qualitatively different
+outcomes \citep{schulman2017ppo, jaderberg2017unreal}. Auxiliary tasks for
+representation learning---predicting object positions, next-frame pixels, or self-supervised
+contrastive targets---have been proposed as a remedy, training a shared encoder to extract
+features useful for both the auxiliary objective and downstream policy learning
+\citep{laskin2020curl,lyle2022what}.
+
+Most evaluations of auxiliary tasks rely on benchmark simulators (Atari, DeepMind Lab, Procgen,
+MuJoCo) where the action--reward link is by construction non-degenerate: every action
+meaningfully shifts state, and PPO has a well-defined gradient to follow. Real commercial games
+deployed on consumer platforms introduce challenges these benchmarks elide. The action space
+exposed by the game's UI may be impoverished relative to its internal mechanics
+(\textit{e.g.}, a single tap that triggers context-dependent behavior). The opponent
+controller may be hardcoded to a passive defensive role that effectively eliminates the
+reward signal in one direction. Snapshot-based episodic reset, vision-based pose extraction,
+and emulator failure handling all become first-class engineering concerns rather than
+afterthoughts.
+
+We study three auxiliary configurations---no auxiliary task (baseline), object-centric
+pose prediction (OCA), and next-frame pixel reconstruction (DPR)---in a real commercial
+mobile basketball game (Bouncy Basketball) running on a farm of Android emulators. Our
+central empirical finding is that the environment's auto-control dynamics jointly create a
+\emph{near-degenerate reward landscape}, in which uniform-random policies are locally
+near-optimal and PPO with auxiliary tasks alone fails to commit. Augmenting PPO with
+Random Network Distillation \citep{burda2018rnd} restores commitment, and at this point the
+three auxiliary configurations differentiate.
+
+Our contributions are:
+\begin{itemize}
+  \item An empirical comparison of OCA, DPR, and baseline auxiliary configurations on a real
+    commercial Android game, under both pure PPO and PPO with RND.
+  \item A diagnostic methodology (\texttt{diag\_actions}) for detecting degenerate
+    action--reward landscapes \emph{before} committing to a training run.
+  \item A lightweight CV-pipeline object-centric target via HSV thresholding and connected
+    components, requiring zero human-annotated supervision.
+  \item Documentation of the engineering pitfalls of deploying RL on a closed-source
+    commercial mobile game (Sec.~\ref{sec:env}), including team-mapping verification,
+    snapshot portability, and autopilot characterization.
+\end{itemize}
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Auxiliary tasks for RL.}
+UNREAL \citep{jaderberg2017unreal} introduced multi-task auxiliary losses (pixel control,
+reward prediction, value replay) shared with a base actor-critic, finding that auxiliary
+prediction of \emph{changes} outperforms raw pixel reconstruction. CURL \citep{laskin2020curl}
+replaces reconstruction with contrastive instance-discrimination and outperforms
+reconstruction-based baselines on Atari and DM-Control. \citet{lyle2022what} investigate
+which auxiliary tasks are useful in theory and find the answer is sensitive to the target
+policy and the environment's reward density. Our work adds an empirical data point to this
+open question, on a real-world game with explicit autopilot dynamics.
+
+\paragraph{Object-centric world models.}
+Recent work \citep{ferraro2024focus, mosbach2025ocstorm} uses learned segmentation networks
+(slot attention, or pre-trained masks) to extract per-object representations, then trains
+world models that predict per-object dynamics. These methods report sample-efficiency gains
+on robotic manipulation tasks but require either pre-trained vision models or
+human-annotated bounding boxes. We use a simpler alternative: HSV thresholding plus
+connected components, which extracts object centroids in ${\sim}1$\,ms per frame with zero
+supervision, at the cost of some detection noise.
+
+\paragraph{Intrinsic motivation.}
+Random Network Distillation \citep{burda2018rnd} computes intrinsic reward as the prediction
+error between a fixed random network and a learned predictor on the current observation,
+giving high reward for visiting novel states. ICM \citep{pathak2017curiosity} uses a
+forward-dynamics model instead. We adopt RND for its simplicity and demonstrate its
+necessity in our degenerate-reward setting.
+
+\paragraph{Mobile / Android RL.}
+AndroidEnv \citep{toyama2021androidenv} is the closest prior work: a generic RL platform for
+any Android app exposed through a universal touchscreen interface. AndroidEnv targets
+infrastructure (an open Android stack for RL research) rather than any specific game. We
+target a specific commercial game and document the engineering pitfalls that arise when
+auxiliary tasks meet such a setting.
+
+% =====================================================================
+\section{Method}
+\label{sec:method}
+
+% TODO Subsections:
+% 3.1 Architecture (shared encoder + actor + critic + aux head)
+% 3.2 OCA target (10-dim, K=4 prediction horizon, HSV-derived)
+% 3.3 DPR target (transposed-conv decoder, next-frame 84x84)
+% 3.4 RND module (small CNN target+predictor, MSE intrinsic reward, normalized)
+% 3.5 Combined loss
+
+We train Proximal Policy Optimization (PPO) \citep{schulman2017ppo} with a shared encoder
+that feeds three heads: an actor (policy logits), a critic (value), and an auxiliary head
+whose form depends on the configuration. Optionally we augment PPO with an intrinsic reward
+stream from Random Network Distillation \citep{burda2018rnd}.
+
+\subsection{Architecture}
+
+The encoder is a NatureCNN \citep{mnih2015nature} taking a 4-frame stack of $84\times 84$
+grayscale observations and producing a 512-dimensional feature vector $z_t$. The actor head
+is a linear projection to action logits; the critic is a linear projection to scalar value.
+
+\subsection{Auxiliary configurations}
+
+\paragraph{Baseline.} No auxiliary head; the encoder is shaped only by PPO gradients.
+
+\paragraph{OCA (Object-Centric Auxiliary).} A 2-layer MLP head predicts a 10-dimensional
+target $\hat{y}_t \in \mathbb{R}^{10}$ representing ball $(x,y)$, our team centroid
+$(x,y,\sin\theta,\cos\theta)$, and opponent centroid $(x,y,\sin\theta,\cos\theta)$, where
+$\theta$ is the body axis derived from the line between same-team players. The target is
+shifted by $K=4$ steps into the future to prevent the encoder from trivially solving
+``detect objects in the current frame.'' Loss is masked mean squared error against the CV
+pipeline output (Sec.~\ref{sec:env}).
+
+\paragraph{DPR (Dense Pixel Reconstruction).} A transposed-convolutional decoder predicts
+the next-frame's grayscale at $84\times 84$. Loss is mean squared error against the actual
+next frame from the frame stack.
+
+\subsection{Random Network Distillation}
+
+% TODO formula + normalization details
+
+Two networks share a small-CNN architecture: $f_\theta^\text{tgt}$ (random, frozen at
+initialization) and $f_\phi^\text{prd}$ (trained). The intrinsic reward is
+\begin{equation}
+  r^\text{int}_t = \beta \cdot \frac{\|f_\theta^\text{tgt}(o_t) - f_\phi^\text{prd}(o_t)\|_2^2}{\sqrt{\sigma^2_\text{run} + \epsilon}}
+\end{equation}
+where $\sigma^2_\text{run}$ is a running estimate of the squared-norm variance and
+$\beta=0.5$. The predictor is trained on a separate MSE loss to match the target's outputs
+on visited states.
+
+\subsection{Combined objective}
+
+\begin{equation}
+  \mathcal{L} = \mathcal{L}_\text{pg} + c_v \mathcal{L}_v - c_\text{ent} \mathcal{H}[\pi] + c_\text{aux} \mathcal{L}_\text{aux} + c_\text{rnd} \mathcal{L}_\text{rnd}
+\end{equation}
+with $c_v=0.5$, $c_\text{ent}=0.05$, $c_\text{aux}=0.5$, $c_\text{rnd}=1.0$.
+
+% =====================================================================
+\section{Environment and Diagnostic Methodology}
+\label{sec:env}
+
+\subsection{Bouncy Basketball as test bed}
+
+% TODO 1-2 paragraphs on the game, its action space, scoring mechanic.
+
+\subsection{Android pipeline}
+
+% TODO Briefly describe emulator farm, adb backend (motionevent), raw screencap,
+% snapshot-based episodic reset.
+
+\subsection{The autopilot trap and \texttt{diag\_actions} protocol}
+
+% TODO This is the key methodological contribution; explain the protocol fully.
+
+\subsection{Vision-derived OCA target}
+
+% TODO HSV thresholding details, jersey-color discriminator, connected components,
+% per-team centroid + body axis.
+
+% =====================================================================
+\section{Experiments}
+\label{sec:experiments}
+
+% TODO Subsections:
+% 5.1 Setup (3 configs x N seeds x 40k steps, RND on, hyperparameters)
+% 5.2 Without RND: PPO + aux fails to commit (v8 result, ablation)
+% 5.3 With RND: training-time returns converge to positive means
+% 5.4 Deterministic evaluation: training/eval gap
+% 5.5 Per-config breakdown and statistical significance
+% 5.6 Diagnostic protocol case study
+
+\subsection{Experimental setup}
+% TODO fill in once final results land.
+
+\subsection{Result 1: Pure PPO with aux tasks collapses to uniform random}
+% TODO v8-like result
+
+\subsection{Result 2: RND restores commitment}
+% TODO v9 training curves
+
+\subsection{Result 3: Training vs.\ deterministic evaluation gap}
+% TODO eval results
+
+\subsection{Statistical significance}
+% TODO paired bootstrap or Welch's t-test on per-config means.
+
+% Insert figures and tables in this section. Example placeholder table:
+\begin{table}[t]
+  \centering
+  \caption{Final per-config returns at 40k training steps (rolling 64-episode mean) and
+    deterministic evaluation (n=10 episodes per checkpoint, 256-step cap).
+    Lower is worse; positive = our team beats CPU opponent. Standard errors over seeds in
+    parentheses.}
+  \label{tab:main-results}
+  \begin{tabular}{lccc}
+    \toprule
+    Configuration & Training ret & Eval ret & $\Delta$ \\
+    \midrule
+    Baseline (no aux)         & \todo{X.XX (\pm X.XX)} & \todo{X.XX (\pm X.XX)} & \todo{X.XX} \\
+    OCA (object-centric)      & \todo{X.XX (\pm X.XX)} & \todo{X.XX (\pm X.XX)} & \todo{X.XX} \\
+    DPR (pixel reconstruction)& \todo{X.XX (\pm X.XX)} & \todo{X.XX (\pm X.XX)} & \todo{X.XX} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+% TODO 3-4 paragraphs:
+% Paragraph 1: why does intrinsic motivation matter here? (uniform-random equilibrium)
+% Paragraph 2: why does training/eval ordering disagree?
+% Paragraph 3: implications for aux task choice
+% Paragraph 4: limitations and threats to validity
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+% TODO 1 short paragraph summarizing the main empirical and methodological findings.
+
+% =====================================================================
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+% =====================================================================
+\appendix
+
+\section{Hyperparameters}
+\label{app:hyperparams}
+% TODO Full table of hyperparameters used in all experiments.
+
+\section{Per-seed learning curves}
+\label{app:curves}
+% TODO Figures of return / entropy / aux-loss / RND-loss vs.\ update for each seed.
+
+\section{Engineering pitfalls (extended)}
+\label{app:engineering}
+% TODO Pull from LESSONS_LEARNED.md: SWITCH SIDES, CUSTOMIZE persistence,
+% snapshot portability, adb auto-discovery range, etc.
+
+\section{Diagnostic protocol details}
+\label{app:diag}
+% TODO Full pseudocode + example output of diag_actions.py.
+
+\end{document}

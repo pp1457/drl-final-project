@@ -1,0 +1,14 @@
+{
+  "n_episodes": 3,
+  "mean_return": 2.0,
+  "std_return": 2.0,
+  "median_return": 2.0,
+  "q05": 0.2,
+  "q95": 3.8,
+  "mean_length": 128.0,
+  "raw_returns": [
+    4.0,
+    0.0,
+    2.0
+  ]
+}
