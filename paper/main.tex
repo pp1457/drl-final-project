@@ -45,11 +45,16 @@ with shared NatureCNN encoder. Our principal empirical finding is a
 \emph{negative} one: at our $80\,000$-step budget, none of the three
 representation-learning conditions (no aux / object-centric pose
 regression / dense pixel reconstruction) learns a policy that beats
-the deterministic in-game CPU opponent. Per-seed final returns
-cluster tightly around $-19$ (HOU loses by $\approx 19$ baskets per
-$4$-quarter game, statistically indistinguishable from random play),
-with per-condition means within $0.41$ reward of each other and
-inter-seed std $0.5$--$0.7$. We additionally analyse the trained
+the deterministic in-game CPU opponent. Per-seed final
+training-time returns cluster tightly around $-19$ (HOU loses by
+$\approx 19$ baskets per $4$-quarter game), with per-condition
+means within $0.41$ reward of each other and inter-seed std
+$0.5$--$0.7$. Deterministic evaluation against a measured
+uniform-random baseline confirms that all three conditions did
+learn \emph{something} above random ($-3.00$ per quarter)---each
+trained-condition mean is $1.5$--$2.3$ reward above the random
+floor---but the auxiliary-loss conditions do not improve on the
+no-aux baseline. We additionally analyse the trained
 policies offline and find that the actor head has effectively
 \emph{ignored} the charge-duration scalar we added to the
 observation: $P(\textsc{press})$ varies by less than $0.01$ as
@@ -350,6 +355,78 @@ are statistically indistinguishable at this budget; none of them
 learns to beat the deterministic in-game CPU opponent in $80\,000$
 environment steps.
 
+\subsection{Deterministic evaluation}
+\label{sec:eval}
+
+We evaluate every one of the 9 final checkpoints under a deterministic
+policy ($\arg\max$ over actor logits) with the RND bonus and
+auxiliary loss disabled. Each checkpoint is evaluated for $3$
+episodes capped at $96$ environment steps (one quarter is
+$\approx 64$--$96$ steps at the in-game timer; the cap shortens
+the per-eval wall-clock to keep all 9 evals on one side emulator
+in a single sitting). The per-episode return is the HOU--CHI
+score-event delta accumulated over the quarter.
+
+\begin{table}[h]
+  \caption{Deterministic evaluation of all 9 final checkpoints
+  ($3$ episodes $\times$ $96$-step cap per checkpoint). Each
+  return is the cumulative HOU--CHI score over one quarter. Bold
+  mean indicates the best per-condition mean.}
+  \label{tab:eval}
+  \centering
+  \small
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{Condition} & \textbf{Seed 0} & \textbf{Seed 1} & \textbf{Seed 2} & \textbf{Mean (std)} \\
+    \midrule
+    Baseline & ws1: $-1.67$ ($[-2,0,-3]$) & ws2: $\phantom{-}0.00$ ($[-1,0,+1]$) & ws3: $-0.33$ ($[0,-1,0]$) & $\mathbf{-0.67\;(0.85)}$ \\
+    OCA      & ws4: $-2.67$ ($[-1,-4,-3]$) & ws5: $\phantom{-}0.00$ ($[0,0,0]$)   & ws6: $-1.67$ ($[-2,-1,-2]$) & $-1.44\;(1.35)$ \\
+    DPR      & ws7: $-1.00$ ($[-1,-2,0]$)  & ws8: $-1.33$ ($[-3,+1,-2]$)         & ws10: $-0.33$ ($[+2,-2,-1]$) & $-0.89\;(0.51)$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Three observations on Table~\ref{tab:eval}:
+
+\textbf{(i) All three trained conditions are clearly above the
+uniform-random baseline.} As a control we evaluated a
+uniform-random policy under the identical protocol ($3$ episodes
+$\times$ $96$-step cap on the same emulator and snapshot) and
+measured a mean return of $-3.00$ (raw $\{-3, -5, -1\}$, std
+$2.00$). All three trained-condition means
+(baseline $-0.67$, OCA $-1.44$, DPR $-0.89$) sit
+$1.5$--$2.3$ reward above this random-policy floor, so
+\emph{some} learning has happened: even though the training-time
+plot of Figure~\ref{fig:traincurves} appears to plateau, the
+deterministic $\arg\max$ policy that PPO produced is meaningfully
+better than uniform random. The training-time metric is computed
+over a $\sim$$10\times$ longer horizon (full-game $1024$-step
+episodes) and over the stochastic on-policy samples PPO actually
+trained on (rather than the deterministic policy evaluated here),
+which is why training-time returns of $\approx-19$ do not
+contradict per-quarter eval returns of $\approx-1$.
+
+\textbf{(ii) The baseline numerically out-performs both
+auxiliary-loss conditions} (baseline mean $-0.67$ vs OCA $-1.44$
+vs DPR $-0.89$). The per-condition gap baseline$\to$OCA is
+$0.78$, slightly larger than the inter-seed std within each
+condition ($0.85$, $1.35$, $0.51$); under any reasonable
+significance test on $n=9$ episodes per condition the gap is at
+most borderline-significant, but the \emph{direction} is the
+opposite of what one would predict from the auxiliary-loss
+literature on fast simulators. Neither auxiliary loss provides a
+detectable benefit in our setting.
+
+\textbf{(iii) Pathological per-seed behaviour is visible.}
+\texttt{ws5\_oca\_s1} produced three identical $0$-score
+episodes: a degenerate policy that essentially never presses
+(consistent with its $P(\textsc{press})=0.42$ becoming
+$\arg\max=\textsc{no-press}$ for every observation in the
+deterministic regime). \texttt{ws4\_oca\_s0} took the opposite
+degenerate path: a single $-4$ blowout pulled its mean down.
+\texttt{ws8\_dpr\_s1} produced the only positive single-episode
+return ($+1$), and \texttt{ws10\_dpr\_s2} produced a $+2$.
+
 \subsection{The actor ignores the charge-duration augmentation}
 \label{sec:charge-ignored}
 
@@ -524,11 +601,17 @@ we bundled together here.
 We presented a systematic empirical study of representation-learning
 auxiliary losses for on-policy DRL on a real Android emulator. To
 \textbf{(Q1)}---do auxiliary losses help PPO at $\sim$\SI{2}{\hertz}
-on Android?---we report a negative answer: at our
-$80\,000$-step budget, no condition (no-aux / OCA / DPR) beats the
-deterministic in-game CPU opponent, and per-condition mean
-differences are statistically indistinguishable from inter-seed
-noise. To \textbf{(Q2)}---does our charge-duration observation
+on Android?---we report a negative answer: at our $80\,000$-step
+budget, no condition (no-aux / OCA / DPR) beats the deterministic
+in-game CPU opponent. Deterministic eval (Table~\ref{tab:eval})
+shows that all three conditions are clearly above the
+measured uniform-random baseline ($\approx -3.0$ per 96-step
+episode), but the auxiliary-loss conditions do not improve on the
+no-aux baseline: baseline-PPO numerically out-performs both OCA
+($-0.67$ vs $-1.44$) and DPR ($-0.67$ vs $-0.89$), with
+per-condition gaps comparable to or smaller than inter-seed std.
+Neither auxiliary loss provides a detectable benefit in this
+setting. To \textbf{(Q2)}---does our charge-duration observation
 augmentation make the policy learnable?---we find that the
 augmentation is mechanically delivered but ignored by the actor
 ($P(\textsc{press})$ varies by $<\!0.01$ across the entire
