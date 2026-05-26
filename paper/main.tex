@@ -50,11 +50,13 @@ training-time returns cluster tightly around $-19$ (HOU loses by
 $\approx 19$ baskets per $4$-quarter game), with per-condition
 means within $0.41$ reward of each other and inter-seed std
 $0.5$--$0.7$. Deterministic evaluation against a measured
-uniform-random baseline confirms that all three conditions did
-learn \emph{something} above random ($-3.00$ per quarter)---each
-trained-condition mean is $1.5$--$2.3$ reward above the random
-floor---but the auxiliary-loss conditions do not improve on the
-no-aux baseline. We additionally analyse the trained
+uniform-random baseline ($n=10$ episodes, mean $-1.60$) shows
+trained-condition means $0.2$--$0.9$ reward above the random
+floor, but at our sample size none of the trained-vs-random
+gaps reach statistical significance (Welch $t$-test
+$p \geq 0.15$, one-sided Mann--Whitney $p \geq 0.08$). The
+auxiliary-loss conditions do not improve on the no-aux baseline
+either ($p \geq 0.23$ for both comparisons). We additionally analyse the trained
 policies offline and find that the actor head has effectively
 \emph{ignored} the charge-duration scalar we added to the
 observation: $P(\textsc{press})$ varies by less than $0.01$ as
@@ -388,23 +390,28 @@ score-event delta accumulated over the quarter.
 
 Three observations on Table~\ref{tab:eval}:
 
-\textbf{(i) All three trained conditions are clearly above the
-uniform-random baseline.} As a control we evaluated a
-uniform-random policy under the identical protocol ($3$ episodes
-$\times$ $96$-step cap on the same emulator and snapshot) and
-measured a mean return of $-3.00$ (raw $\{-3, -5, -1\}$, std
-$2.00$). All three trained-condition means
-(baseline $-0.67$, OCA $-1.44$, DPR $-0.89$) sit
-$1.5$--$2.3$ reward above this random-policy floor, so
-\emph{some} learning has happened: even though the training-time
-plot of Figure~\ref{fig:traincurves} appears to plateau, the
-deterministic $\arg\max$ policy that PPO produced is meaningfully
-better than uniform random. The training-time metric is computed
-over a $\sim$$10\times$ longer horizon (full-game $1024$-step
-episodes) and over the stochastic on-policy samples PPO actually
-trained on (rather than the deterministic policy evaluated here),
-which is why training-time returns of $\approx-19$ do not
-contradict per-quarter eval returns of $\approx-1$.
+\textbf{(i) Trained conditions are numerically above the uniform-random
+baseline, but the gap is not statistically significant at our
+sample size.} As a control we evaluated a uniform-random policy
+under the identical protocol on the same emulator and snapshot:
+$10$ episodes of $96$-step quarters, mean return $-1.60$
+(raw $\{-3,-5,-1,-2,-1,0,0,-2,-1,-1\}$, std $1.51$, $95\%$ CI
+$[-2.68, -0.52]$). The trained-condition means are
+baseline $-0.67$ ($95\%$ CI $[-1.61,+0.27]$),
+OCA $-1.44$ ($[-2.54,-0.35]$), DPR $-0.89$ ($[-2.13,+0.35]$).
+The CIs all overlap with the random-policy CI. Welch's two-sided
+$t$-test gives $p = 0.155$ (baseline vs random),
+$p = 0.337$ (DPR), $p = 0.820$ (OCA); one-sided Mann--Whitney $U$
+gives $p = 0.076$ (baseline vs random), $0.307$ (DPR), $0.433$
+(OCA). \textbf{We cannot, at $\alpha = 0.05$, reject the null
+hypothesis that any of the trained conditions performs identically
+to uniform-random play.} The directional evidence is consistent
+with some learning having happened (every trained mean is higher
+than the random mean), but the sample size is not sufficient to
+confirm it. We discuss why training-time returns of $\approx-19$
+per full game do not contradict per-quarter eval returns of
+$\approx-1$ (horizon difference plus stochastic-vs-deterministic
+policy difference) in \S\ref{sec:discussion}.
 
 \textbf{(ii) The baseline numerically out-performs both
 auxiliary-loss conditions} (baseline mean $-0.67$ vs OCA $-1.44$
@@ -604,14 +611,17 @@ auxiliary losses for on-policy DRL on a real Android emulator. To
 on Android?---we report a negative answer: at our $80\,000$-step
 budget, no condition (no-aux / OCA / DPR) beats the deterministic
 in-game CPU opponent. Deterministic eval (Table~\ref{tab:eval})
-shows that all three conditions are clearly above the
-measured uniform-random baseline ($\approx -3.0$ per 96-step
-episode), but the auxiliary-loss conditions do not improve on the
-no-aux baseline: baseline-PPO numerically out-performs both OCA
-($-0.67$ vs $-1.44$) and DPR ($-0.67$ vs $-0.89$), with
-per-condition gaps comparable to or smaller than inter-seed std.
-Neither auxiliary loss provides a detectable benefit in this
-setting. To \textbf{(Q2)}---does our charge-duration observation
+shows trained-condition means numerically above the measured
+uniform-random baseline ($-1.60$ per 96-step quarter), but at our
+sample size ($n=9$ episodes per trained condition, $n=10$
+random) none of the trained-vs-random gaps reach statistical
+significance (Welch $t$-test $p \geq 0.15$). The auxiliary-loss
+conditions do not improve on the no-aux baseline either: the
+baseline numerically out-performs both OCA ($-0.67$ vs $-1.44$,
+$p = 0.23$) and DPR ($-0.67$ vs $-0.89$, $p = 0.75$), so neither
+auxiliary loss provides a detectable benefit in this setting.
+The honest reading is that, at this budget, we cannot distinguish
+the trained policies from uniform-random play. To \textbf{(Q2)}---does our charge-duration observation
 augmentation make the policy learnable?---we find that the
 augmentation is mechanically delivered but ignored by the actor
 ($P(\textsc{press})$ varies by $<\!0.01$ across the entire
