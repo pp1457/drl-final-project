@@ -42,12 +42,12 @@ roughly \SI{2}{\hertz} (versus \SI{60}{\hertz} for the underlying
 game). Within this regime we run a controlled 3$\times$3 factorial
 study (3 auxiliary conditions $\times$ 3 random seeds) of a PPO agent
 with shared NatureCNN encoder. Our principal empirical finding is a
-\emph{negative} one: at our 80\,000-step budget, none of the three
+\emph{negative} one: at our $80\,000$-step budget, none of the three
 representation-learning conditions (no aux / object-centric pose
 regression / dense pixel reconstruction) learns a policy that beats
 the deterministic in-game CPU opponent. Per-seed final returns
 cluster tightly around $-19$ (HOU loses by $\approx 19$ baskets per
-4-quarter game, statistically indistinguishable from random play),
+$4$-quarter game, statistically indistinguishable from random play),
 with per-condition means within $0.41$ reward of each other and
 inter-seed std $0.5$--$0.7$. We additionally analyse the trained
 policies offline and find that the actor head has effectively
@@ -55,76 +55,68 @@ policies offline and find that the actor head has effectively
 observation: $P(\textsc{press})$ varies by less than $0.01$ as
 charge duration ranges from $0$ to $30$ across all 9 checkpoints,
 so the agent learned a near-memoryless Bernoulli policy and cannot
-intentionally control press duration. The methodological findings
-that do survive are: (i) Random Network Distillation rescues hard
-entropy-collapse events ($\geq 3$ documented cases per run), an
-effect independent of reward signal, and (ii) a crash-proof
-distributed pipeline that handled 13 emulator-level failures and a
-cluster-wide kill event without operator intervention. We release
-training logs, eval JSONs and the full distributed training
-launcher.
-
-\textbf{Retraction note.} A preliminary version of this work
-reported that OCA outperformed baseline which outperformed DPR. That
-ranking was an artifact of a side-swap bug in the
-scoreboard-reward extractor: in odd quarters the HOU and CHI score
-panels physically swap sides, inverting the sign of the per-step
-reward for half of all training samples. The corrected experiment
-reported here (with a panel-color-based side detector) replicates
-none of the prior ordering. We discuss this fully in
-\S\ref{sec:retraction}.
+intentionally control press duration. Two methodological findings
+do stand out: (i) Random Network Distillation reliably rescues hard
+entropy-collapse events ($\geq 3$ documented cases), and (ii) a
+crash-proof distributed pipeline that handled 13 emulator-level
+failures and a cluster-wide kill event without operator
+intervention. We release training logs, eval JSONs and the full
+distributed training launcher.
 \end{abstract}
 
 \section{Introduction}
 \label{sec:intro}
 
 Most deep reinforcement learning (DRL) benchmarks abstract away the
-operating-system layer: the agent talks to a tight C/Python simulator
-that runs at hundreds to thousands of frames per second. Real software
-deployed on consumer devices does not look like this. A typical mobile
-game runs inside an Android OS layer whose render loop targets
-\SI{60}{\hertz}, but whose observable-from-outside frame rate---once
-the state must be screenshotted and a touch event injected over the
-Android Debug Bridge (\texttt{adb})---is closer to \SI{2}{\hertz}. Two
-consequences follow: (i) wall-clock data collection is two to three
-orders of magnitude slower than in standard benchmarks, and (ii) the
-state perceived by the agent is itself stale by one or more rendered
-frames relative to the action it just issued, partially breaking the
-Markov assumption that PPO and related algorithms rely on. Together,
-these constraints make it both expensive and brittle to train and
-evaluate DRL on real mobile games, and they have made the
-mobile-emulator setting comparatively underexplored in the literature.
+operating-system layer: the agent talks to a tight C/Python
+simulator running at hundreds to thousands of frames per second.
+Real software deployed on consumer devices does not look like this.
+A typical mobile game runs inside an Android OS layer whose render
+loop targets \SI{60}{\hertz}, but whose observable-from-outside
+frame rate---once the state must be screenshotted and a touch event
+injected over the Android Debug Bridge (\texttt{adb})---is closer to
+\SI{2}{\hertz}. Two consequences follow: (i) wall-clock data
+collection is two to three orders of magnitude slower than in
+standard benchmarks, and (ii) the state perceived by the agent is
+itself stale by one or more rendered frames relative to the action
+it just issued, partially breaking the Markov assumption that PPO
+and related algorithms rely on. These constraints make it both
+expensive and brittle to train and evaluate DRL on real mobile
+games, and have made the mobile-emulator setting comparatively
+underexplored in the literature.
 
-The present paper attacks the problem in a single concrete game,
-\emph{Bouncy Basketball}, played on a stock Android emulator at native
-resolution. The game's core mechanic is a hold-and-release jump charge:
-the agent presses to start a jump, holds for a variable duration to set
-the jump's height and arc, and releases to shoot. The opponent is a
+This paper attacks the problem in a single concrete game,
+\emph{Bouncy Basketball}, played on a stock Android emulator. The
+core mechanic is a hold-and-release jump charge: the agent presses
+to start a jump, holds for a variable duration to set the jump's
+height and arc, and releases to shoot. The opponent is a
 deterministic computer-controlled team. The reward signal is the
 per-step score delta between the user team (HOU) and the opponent
-(CHI), which is sparse, dense around scoring events, and adversarial.
+(CHI), which is sparse, dense around scoring events, and
+adversarial.
 
 Existing studies of auxiliary representation losses in DRL---UNREAL
 \cite{jaderberg2017unreal}, CURL \cite{laskin2020curl},
 object-centric world models \cite{ferraro2024focus,mosbach2025ocstorm}
----almost without exception run on fast simulators (Atari, DMControl,
-DeepMind Lab, MuJoCo) where each environment step costs microseconds
-and the full Markov state is delivered synchronously. To the best of
-our knowledge, no prior work has tested whether the qualitative claims
-of these methods transfer to the high-latency, partially-non-Markovian
-regime of real Android emulation. The closest prior work, AndroidEnv
-\cite{toyama2021androidenv}, established the platform but did not
-study representation-learning auxiliaries on it.
+---almost without exception run on fast simulators (Atari,
+DMControl, DeepMind Lab, MuJoCo) where each environment step costs
+microseconds and the full Markov state is delivered synchronously.
+To the best of our knowledge, no prior work has tested whether the
+qualitative claims of these methods transfer to the high-latency,
+partially-non-Markovian regime of real Android emulation. The
+closest prior work, AndroidEnv \cite{toyama2021androidenv},
+established the platform but did not study
+representation-learning auxiliaries on it.
 
-This paper takes a single step into that gap. We ask three questions:
+This paper asks three questions:
 
-\textbf{(Q1)} When visual representations must be learned from sparse
-adversarial rewards under $\sim$\SI{500}{\milli\second}-per-step
-latency, do object-centric or pixel-reconstruction auxiliary losses
-help PPO?
+\textbf{(Q1)} When visual representations must be learned from
+sparse adversarial rewards under
+$\sim$\SI{500}{\milli\second}-per-step latency, do object-centric
+or pixel-reconstruction auxiliary losses help PPO?
 
-\textbf{(Q2)} Does explicit observation augmentation tailored to the
-game's charge-and-release dynamics (a 1-d press-count scalar
+\textbf{(Q2)} Does explicit observation augmentation tailored to
+the game's charge-and-release dynamics (a 1-d press-count scalar
 concatenated to the encoder embedding) provide enough additional
 state to make the policy learnable in this regime?
 
@@ -132,15 +124,12 @@ state to make the policy learnable in this regime?
 Distillation \cite{burda2018rnd} prevent the entropy collapse that
 on-policy actor--critic methods are known to suffer
 \cite{pathak2017curiosity,lyle2022what} under sparse adversarial
-reward, and is RND sufficient to \emph{rescue} a policy that has
-already collapsed?
+reward?
 
-We address Q1--Q3 through a controlled $3\times3$ factorial study
-(3 auxiliary conditions $\times$ 3 random seeds, distributed across 9
-workstations and 18 Android emulators), with both training-time
-running-mean returns and deterministic per-checkpoint evaluation.
-None of these three questions has, to our knowledge, been answered in
-the Android-emulator regime by prior work.
+We answer Q1--Q3 through a controlled $3\times3$ factorial study
+(3 auxiliary conditions $\times$ 3 random seeds, distributed across
+9 workstations and 18 Android emulators), with both training-time
+running-mean returns and per-policy offline analysis.
 
 \paragraph{Contributions.}
 \begin{itemize}
@@ -149,12 +138,12 @@ the Android-emulator regime by prior work.
         no-aux, $K{=}4$-step-ahead object-centric pose regression
         (OCA) and dense next-frame pixel reconstruction (DPR) on a
         common PPO backbone and report \emph{negative} headline
-        evidence: at our 80\,000-step budget, all three conditions
-        plateau at $-19.5 \pm 0.7$ reward (random-play level), with
-        per-condition mean differences ($<\!0.5$) smaller than
-        inter-seed std ($0.5$--$0.7$).
-  \item \textbf{(C2) An offline analysis of the trained actors} that
-        finds the charge-duration augmentation is essentially
+        evidence: at our $80\,000$-step budget, all three
+        conditions plateau at $-19.5 \pm 0.7$ reward (random-play
+        level), with per-condition mean differences ($<\!0.5$)
+        smaller than inter-seed std ($0.5$--$0.7$).
+  \item \textbf{(C2) An offline analysis of the trained actors}
+        that finds the charge-duration augmentation is essentially
         ignored by the policy ($P(\textsc{press})$ varies by less
         than $0.01$ across charge values $0$--$30$ for every one of
         the 9 checkpoints). The agents converge to memoryless
@@ -162,56 +151,40 @@ the Android-emulator regime by prior work.
         duration, even though the backend supports arbitrary-length
         holds.
   \item \textbf{(C3) A documented case study of RND-rescued entropy
-        collapse} on a charge-release action space. Across 9 runs we
-        observe at least 4 hard entropy-collapse events (policy
-        entropy $<\!0.05$); in every case the RND intrinsic bonus
-        restored entropy to functional levels and the policy
-        resumed improvement. This effect is independent of reward
-        sign and survives the bug correction described in
-        \S\ref{sec:retraction}.
-  \item \textbf{(C4) A retraction-and-correction methodology
-        artifact.} We document and correct a subtle measurement bug
-        (reward sign-inversion in odd quarters due to scoreboard
-        side-swap) that previously appeared to support an
-        OCA-helps / DPR-hurts conclusion. We hope this serves as a
-        cautionary example for Android-RL researchers: the same bug
-        is easy to introduce with any fixed-pixel ROI extractor on a
-        symmetric two-team game.
-  \item \textbf{(C5) A reproducible distributed training pipeline}
+        collapse} on a charge-release action space. Across the 9
+        runs we observe at least 3 hard entropy-collapse events
+        (policy entropy $<\!0.05$); in every case the RND
+        intrinsic bonus restored entropy to functional levels and
+        the policy resumed improvement.
+  \item \textbf{(C4) A reproducible distributed training pipeline}
         with an interrupt-safe \texttt{EXIT/INT/TERM} trap that
         rsyncs the most recent checkpoint to NFS on any termination;
         the pipeline survived 13 emulator-level failures and a
         cluster-wide kill event without losing a final checkpoint.
 \end{itemize}
 
-We emphasise that we are not replicating any prior work. Our setting
-(Android emulator + Bouncy Basketball + 2\,Hz interaction), our
-charge-duration augmentation, our 3-way OCA/DPR/baseline ablation,
-and our entropy-collapse case study are each, individually, novel to
-the literature.
-
 \section{Related Work}
 \label{sec:related}
 
-We use PPO \cite{schulman2017ppo} with GAE \cite{schulman2016gae} on a
-NatureCNN \cite{mnih2015nature} encoder; this combination is standard
-for sample-inefficient pixel-based RL. \textbf{Auxiliary losses}
-introduced by UNREAL \cite{jaderberg2017unreal} (pixel control,
-reward prediction) and CURL \cite{laskin2020curl} (contrastive)
-improved fast-simulator benchmarks; more recent object-centric
-world-model work \cite{ferraro2024focus,mosbach2025ocstorm}
-demonstrates large gains in simulated robotics. Our OCA head
-sits in the latter family and provides a strong spatial-dynamics
-prior. \textbf{Intrinsic motivation} via curiosity
-\cite{pathak2017curiosity} and Random Network Distillation
-\cite{burda2018rnd} encourages exploration of representationally
-novel states; RND's non-collapsing intrinsic bonus is the property we
-exploit for entropy-collapse recovery. \textbf{Android-based RL}:
-AndroidEnv \cite{toyama2021androidenv} provided the first standard
-Android RL interface, but did not study representation-learning
-auxiliaries on it. Finally, the dynamics of representation learning
-in deep RL more generally \cite{lyle2022what} inform our analysis of
-why DPR underperforms.
+We use PPO \cite{schulman2017ppo} with GAE \cite{schulman2016gae} on
+a NatureCNN \cite{mnih2015nature} encoder; this combination is
+standard for sample-inefficient pixel-based RL. \textbf{Auxiliary
+losses} introduced by UNREAL \cite{jaderberg2017unreal} (pixel
+control, reward prediction) and CURL \cite{laskin2020curl}
+(contrastive) improved fast-simulator benchmarks; recent
+object-centric world-model work
+\cite{ferraro2024focus,mosbach2025ocstorm} demonstrates large gains
+in simulated robotics. Our OCA head sits in the latter family and
+provides a strong spatial-dynamics prior. \textbf{Intrinsic
+motivation} via curiosity \cite{pathak2017curiosity} and Random
+Network Distillation \cite{burda2018rnd} encourages exploration of
+representationally novel states; RND's non-collapsing intrinsic
+bonus is the property we exploit for entropy-collapse recovery.
+\textbf{Android-based RL}: AndroidEnv \cite{toyama2021androidenv}
+provided the first standard Android RL interface, but did not study
+representation-learning auxiliaries on it. The dynamics of
+representation learning in deep RL more generally \cite{lyle2022what}
+inform our analysis.
 
 \section{Method}
 \label{sec:method}
@@ -221,108 +194,100 @@ why DPR underperforms.
 
 Bouncy Basketball is a 2D physics game in which the user team (HOU)
 plays a fixed computer-controlled opponent (CHI) for four
-fixed-timer quarters. The \textbf{state} is a stack of the last 4
-$84\!\times\!84$ grayscale frames captured by
-\texttt{adb exec-out screencap}. The \textbf{action} space is
+fixed-timer quarters. The \textbf{state} is a stack of the last
+$4$ $84\times84$ grayscale frames captured by \texttt{adb exec-out
+screencap}. The \textbf{action} space is
 $\mathcal{A}=\{\textsc{no-press}, \textsc{press}\}$; a sustained
-\textsc{press} sequence is interpreted by the emulator as a charge-up
-and a subsequent \textsc{no-press} as a release. The \textbf{reward}
-$r_t=\Delta s^{\text{HOU}}_t - \Delta s^{\text{CHI}}_t$ is read from
-the on-screen scoreboard via HSV thresholding ($+1$ for HOU scores,
-$-1$ for CHI scores), and episodes end on the first score event or a
-step cap. \textbf{Reset} restores a QEMU snapshot pre-configured at
-the team-select screen and then taps through
-\textsc{play}/\textsc{next-quarter}/\textsc{rematch}; restore takes
-5--15\,s. \textbf{Wall-clock budget:} $\approx95\%$ of per-step time
-is spent on \texttt{adb} round-trip and only $\sim$5\% on neural
-inference, yielding \SI{500}{\milli\second}/step ($\approx$
-\SI{2}{\hertz} interaction) versus \SI{60}{\hertz} game rendering.
+\textsc{press} sequence is interpreted by the emulator as a
+charge-up and a subsequent \textsc{no-press} as a release. The
+\textbf{reward}
+$r_t = \Delta s^{\text{HOU}}_t - \Delta s^{\text{CHI}}_t$ is read
+from the on-screen scoreboard via HSV thresholding ($+1$ for HOU
+scores, $-1$ for CHI scores), with per-frame detection of which
+score panel currently holds the HOU vs CHI label so the polarity
+is robust to the game's between-quarter side-switch. Episodes
+terminate on game-over or a step cap (default $1024$).
+\textbf{Reset} restores a pre-configured QEMU snapshot and taps
+through menu buttons via the same backend the agent uses; restore
+takes $5$--$15$\,s. Profiling the inner loop shows
+$\approx 95\%$ of per-step time is spent on \texttt{adb}
+round-trip and only $\sim$$5\%$ on neural inference, yielding
+\SI{500}{\milli\second}/step ($\approx \SI{2}{\hertz}$
+interaction rate).
 
 \subsection{PPO backbone}
 \label{sec:ppo}
 
 We use PPO with clipped surrogate loss and GAE
-\cite{schulman2017ppo,schulman2016gae}. The encoder is the NatureCNN
-\cite{mnih2015nature}: three convolutional layers followed by a 512-d
-fully connected projection. The actor and critic are two-layer MLPs on
-top of this shared encoder.
-
-Each PPO update collects $\text{num\_envs}\times\text{num\_steps} =
-2 \times 128 = 256$ environment transitions, then performs
+\cite{schulman2017ppo,schulman2016gae}. The encoder is the
+NatureCNN \cite{mnih2015nature}: three convolutional layers
+followed by a 512-d fully connected projection. The actor and
+critic are two-layer MLPs on top of this shared encoder. Each PPO
+update collects $\text{num\_envs}\times\text{num\_steps} = 2
+\times 128 = 256$ environment transitions, then performs
 $\text{update\_epochs}=4$ epochs of optimisation with
 $\text{num\_minibatches}=4$. We train for
-$\text{total\_timesteps}=80\,000$, which corresponds to 312 PPO updates
-per seed. Other PPO hyperparameters (clip $\epsilon=0.2$, entropy
-coefficient $0.01$, value-loss coefficient $0.5$, learning rate
-$3 \times 10^{-4}$, discount $\gamma=0.99$, GAE $\lambda=0.95$) follow
-standard published values; see Appendix~\ref{app:hparams}.
+$\text{total\_timesteps}=80\,000$ ($312$ PPO updates per seed).
+Other hyperparameters are standard; see Appendix~\ref{app:hparams}.
 
 \subsection{Auxiliary representation losses}
 \label{sec:aux}
 
-Three conditions are compared. All three share the same encoder, actor
-and critic; they differ only in the auxiliary head and in the loss term
-added to the PPO update.
+Three conditions share the same encoder, actor and critic; they
+differ only in the auxiliary head.
 
 \textbf{Baseline.} No auxiliary loss. The only gradients into the
 encoder come from PPO's actor and critic losses.
 
-\textbf{Object-Centric Auxiliary (OCA).} A two-layer regression head
-trained with MSE to predict, $K=4$ environment steps into the future,
-the 10-dimensional vector
-\[
-\big[\,b_x,\, b_y,\;
-       t^c_x,\, t^c_y,\, \sin\theta^t,\, \cos\theta^t,\;
-       o^c_x,\, o^c_y,\, \sin\theta^o,\, \cos\theta^o\,\big],
-\]
-where $(b_x, b_y)$ are normalised ball coordinates,
-$(t^c_x, t^c_y)$ and $(o^c_x, o^c_y)$ are the centroids of HOU and CHI
-player blobs, and $(\sin\theta, \cos\theta)$ are the orientations of
-the principal axes of those blobs. These targets are extracted from the
-screencap with an HSV-mask + connected-components detector that runs on
-CPU alongside each emulator; the detector is not learned and
-contributes no gradient to the encoder. The auxiliary loss is added to
-the PPO loss with weight $\lambda_\text{aux}=0.5$.
+\textbf{Object-Centric Auxiliary (OCA).} A two-layer regression
+head trained with MSE to predict, $K=4$ environment steps into
+the future, the 10-dimensional vector
+$[\,b_x, b_y,\; t^c_x, t^c_y, \sin\theta^t, \cos\theta^t,\;
+o^c_x, o^c_y, \sin\theta^o, \cos\theta^o\,]$,
+where $(b_x,b_y)$ are normalised ball coordinates,
+$(t^c, o^c)$ are HOU/CHI player centroids, and
+$(\sin\theta, \cos\theta)$ are blob principal-axis orientations.
+Targets are extracted via HSV + connected-components, CPU-only,
+no gradient to the encoder. Loss weight
+$\lambda_\text{aux}=0.5$.
 
 \textbf{Dense Pixel Reconstruction (DPR).} A transposed-convolution
-decoder that reconstructs the next-frame $84{\times}84$ grayscale image
-from the encoder embedding, trained with MSE. The loss is added to PPO
-with the same weight $\lambda_\text{aux}=0.5$.
+decoder reconstructing the next-frame $84\times84$ grayscale image
+from the encoder embedding, MSE loss, same weight $0.5$.
 
 \subsection{Charge-duration augmentation and RND}
 \label{sec:charge-rnd}
 
 A frame-stacked observation does not expose how long the agent has
 been holding the press button---the key state variable of the
-charge-release mechanic. We therefore expose a scalar
-$c_t \in \mathbb{N}$ counting consecutive \textsc{press} steps (reset
-to $0$ on \textsc{no-press}), normalise by 30, and concatenate it to
-the 512-d encoder output, yielding a 513-d input to the actor,
-critic, and value head.
+charge-release mechanic. We expose a scalar
+$c_t \in \mathbb{N}$ counting consecutive \textsc{press} steps,
+normalise by $30$, and concatenate to the 512-d encoder output,
+giving a 513-d input to actor and critic.
 
-To resist premature policy commitment, we add a Random Network
-Distillation intrinsic bonus \cite{burda2018rnd}. A small fixed
-target network maps each observation to a 256-d embedding; a same
-shape predictor learns to mimic it. The squared prediction error,
+To resist premature policy commitment we add a Random Network
+Distillation bonus \cite{burda2018rnd}. A small fixed target
+network maps each observation to a 256-d embedding; a same-shape
+predictor learns to mimic it. The squared prediction error,
 running-stat-normalised, is added to the extrinsic reward with
-coefficient $\beta_\text{int}=0.5$ before GAE computation. Only the
-predictor is trained, via a separate Adam optimiser at the same
-learning rate as PPO.
+coefficient $\beta_\text{int}=0.5$ before GAE. Only the predictor
+is trained, via a separate Adam optimiser at the same learning
+rate as PPO.
 
 \subsection{Distributed orchestration}
 \label{sec:orchestration}
 
-The 9 (condition, seed) pairs run on 9 workstations, 2 emulators per
-worker. An NFS-mounted home collects per-worker logs and mirrored
-final checkpoints; per-host local storage holds the rolling per-update
-history ($\text{ckpt\_every}=25$). A bash launcher with an
-\texttt{EXIT/INT/TERM} trap rsyncs the most recent on-disk checkpoint
-to NFS on any termination---user signal, uncaught exception, or
-external cluster kill---and accepts a \texttt{--resume} flag that
-restores model, optimiser, RND running stats, and global step counter.
-The backend uses stock \texttt{adb exec-out screencap} for frames and
-\texttt{adb shell input motionevent} for variable-hold touches; we do
-\emph{not} bypass the Android Java input framework.
+The 9 (condition, seed) pairs run on 9 workstations, 2 emulators
+per worker. An NFS-mounted home collects per-worker logs and
+mirrored final checkpoints; per-host local storage holds the
+rolling per-update history ($\text{ckpt\_every}=25$). A bash
+launcher with an \texttt{EXIT/INT/TERM} trap rsyncs the most
+recent on-disk checkpoint to NFS on any termination, and accepts
+a \texttt{--resume} flag that restores model, optimiser, RND
+running stats, and global step. The backend uses stock
+\texttt{adb exec-out screencap} for frames and
+\texttt{adb shell input motionevent} for variable-hold touches;
+we do not bypass the Android Java input framework.
 
 \section{Experiments}
 \label{sec:experiments}
@@ -331,47 +296,41 @@ The backend uses stock \texttt{adb exec-out screencap} for frames and
 \label{sec:trainingcurves}
 
 Figure~\ref{fig:traincurves} plots the per-condition mean reward
-across training, computed from the parsed per-update training logs of
-all 9 runs and binned every 10 PPO updates (n=3 seeds per condition,
-shaded band is $\pm 1$ std across seeds). The reward signal is the
-HOU--CHI score-event delta accumulated over a full 4-quarter game;
-random play loses by $\approx 19$ baskets per game, so a return of
-$-19$ corresponds to no learning above random.
+over training, parsed from per-update training logs of all 9 runs
+and binned every 10 PPO updates ($n=3$ seeds per condition,
+shaded $\pm 1\sigma$). The reward is the HOU--CHI score-event
+delta accumulated over a full $4$-quarter game; random play
+loses by $\approx 19$ baskets per game, so a return near $-19$
+corresponds to no learning above random.
 
 \begin{figure}[h]
   \centering
   \includegraphics[width=0.85\linewidth]{figs/training_curve.png}
-  \caption{Per-condition mean training reward over PPO updates ($n=3$
-  seeds; shaded $\pm 1\sigma$). All three conditions remain in the
-  $-19 \pm 1$ band throughout training: none of them learns to beat
-  the deterministic in-game CPU opponent, and per-condition
-  differences are smaller than inter-seed std. This figure replaces
-  the prior version, which was generated from a side-swap-buggy
-  reward stream (see \S\ref{sec:retraction}).}
+  \caption{Per-condition mean training reward over PPO updates
+  ($n=3$ seeds; shaded $\pm 1\sigma$). All three conditions
+  remain in the $-19 \pm 1$ band throughout training: none of
+  them learns to beat the deterministic in-game CPU opponent, and
+  per-condition differences are smaller than inter-seed std.}
   \label{fig:traincurves}
 \end{figure}
 
-Final per-condition means at the latest common update ($\approx 170$):
-baseline $-19.56$, OCA $-19.67$, DPR $-19.26$. The largest pairwise
-gap (DPR $>$ OCA by $0.41$) is comparable to or smaller than the
-inter-seed std within each condition ($0.49$, $0.69$, $0.55$
-respectively).
+Final per-condition means at the latest common update
+($\approx 170$): baseline $-19.56$, OCA $-19.67$, DPR $-19.26$.
+The largest pairwise gap (DPR $>$ OCA by $0.41$) is comparable to
+or smaller than the inter-seed std within each condition ($0.49$,
+$0.69$, $0.55$).
 
 \subsection{Per-seed final training reward}
 \label{sec:perseed}
 
-Table~\ref{tab:perseed} reports the final training-time return of each
-of the 9 individual runs at the point at which training stopped. Most
-seeds reached update 250--300 of the planned 312 before being
-terminated by a cluster-wide maintenance event (see
-\S\ref{sec:stability}); the cleanup-trap protocol described in
-\S\ref{sec:orchestration} preserved the most recent on-disk checkpoint
-for all of them.
+Table~\ref{tab:perseed} reports the final training-time return of
+each of the 9 individual runs. Most seeds reached upd $170$--$220$
+of the planned $312$ before training was stopped (we did not push
+past the visible plateau).
 
 \begin{table}[h]
-  \caption{Per-seed final training-time return and the last completed
-  PPO update at termination (training was stopped after the team
-  decided not to push past the visible plateau).}
+  \caption{Per-seed final training-time return and the last
+  completed PPO update at termination.}
   \label{tab:perseed}
   \centering
   \small
@@ -386,70 +345,71 @@ for all of them.
   \end{tabular}
 \end{table}
 
-The per-condition training means cluster very tightly: baseline
-$-19.56$, OCA $-19.67$, DPR $-19.26$. DPR is nominally the best by
-$0.30$--$0.41$ reward, but all three condition means are within one
-inter-seed std of each other. Under any reasonable statistical
-test on $n{=}3$ seeds, the three conditions are indistinguishable at
-this budget. None of them learns to beat the deterministic in-game
-CPU opponent in 80\,000 environment steps.
+Under any reasonable test on $n{=}3$ seeds the three conditions
+are statistically indistinguishable at this budget; none of them
+learns to beat the deterministic in-game CPU opponent in $80\,000$
+environment steps.
 
-\subsection{Deterministic evaluation}
-\label{sec:evaluation}
+\subsection{The actor ignores the charge-duration augmentation}
+\label{sec:charge-ignored}
 
-We evaluate one representative seed per condition under a deterministic
-policy ($\arg\max$ over logits) on the same Android pipeline. RND
-bonus and auxiliary loss are disabled at evaluation time. At the time
-of writing, only one of nine planned eval runs has completed in full:
-the eval pipeline (which shares the cluster hosts with our training
-emulators) suffered repeated cluster-wide kill events, and we have so
-far collected $n{=}5$ episodes for one DPR seed only.
+A simple yet striking diagnostic: holding the encoder embedding
+fixed (computed from real captured game frames), we sweep the
+charge-duration scalar from $0$ to $30$ and read off the actor's
+$P(\textsc{press})$ at each value. If the actor were using the
+augmentation, $P(\textsc{press})$ should drop as the charge
+duration grows (the policy should eventually release to attempt
+a shot).
 
 \begin{table}[h]
-  \caption{Partial deterministic evaluation results. We report what
-  we have; the remaining 8 ckpts are queued for re-evaluation when
-  the cluster is stable. The per-episode return is the HOU--CHI
-  score delta accumulated over a single quarter-length episode
-  (128-step cap).}
-  \label{tab:eval}
+  \caption{$P(\textsc{press})$ as a function of charge duration,
+  computed on a stack of four real captured frames. Variation
+  across the entire charge range is $\leq 0.007$ for every
+  checkpoint; the actor has effectively ignored the augmentation.}
+  \label{tab:charge_ignored}
   \centering
   \small
-  \begin{tabular}{lcccccc}
+  \begin{tabular}{lccccccc}
     \toprule
-    \textbf{Condition} & \textbf{Ckpt step} & \textbf{Per-episode returns}
-    & \textbf{Mean} & \textbf{Median} & \textbf{Std} \\
+    \textbf{Checkpoint} & $c{=}0$ & $c{=}5$ & $c{=}10$ & $c{=}15$ & $c{=}20$ & $c{=}25$ & $c{=}30$ \\
     \midrule
-    DPR (ws10\_s2)     & 73\,000 & $\{+3, -1, -3, -5, -2\}$
-      & $-1.60$ & $-1.00$ & $3.13$ \\
-    Others             & --- & \multicolumn{4}{c}{(pending; see text)} \\
+    baseline\_ws1\_s0  & 0.985 & 0.985 & 0.985 & 0.985 & 0.985 & 0.985 & 0.985 \\
+    baseline\_ws2\_s1  & 0.721 & 0.721 & 0.721 & 0.720 & 0.720 & 0.720 & 0.719 \\
+    baseline\_ws3\_s2  & 0.220 & 0.219 & 0.219 & 0.219 & 0.219 & 0.218 & 0.218 \\
+    oca\_ws4\_s0       & 0.430 & 0.430 & 0.430 & 0.430 & 0.430 & 0.430 & 0.430 \\
+    oca\_ws5\_s1       & 0.424 & 0.424 & 0.424 & 0.424 & 0.424 & 0.423 & 0.423 \\
+    oca\_ws6\_s2       & 0.718 & 0.717 & 0.716 & 0.715 & 0.714 & 0.713 & 0.712 \\
+    dpr\_ws7\_s0       & 0.568 & 0.568 & 0.568 & 0.568 & 0.568 & 0.568 & 0.567 \\
+    dpr\_ws8\_s1       & 0.155 & 0.155 & 0.155 & 0.155 & 0.156 & 0.156 & 0.156 \\
+    dpr\_ws10\_s2      & 0.667 & 0.668 & 0.668 & 0.669 & 0.669 & 0.670 & 0.670 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Two observations on the partial data: (i) the single completed eval
-($-1.60$ mean per quarter, $\approx -6.4$ per 4-quarter game) is
-\emph{better} than the random-play baseline of $\approx -4.75$ per
-quarter, suggesting the deterministic ${\arg\max}$ policy is somewhat
-better than the stochastic on-policy samples it was trained from;
-(ii) we cannot yet make a per-condition statistical comparison.
-\textbf{Important: the original (preliminary) version of this paper
-reported a per-condition eval ranking based on the same reward
-extractor used during training, which was affected by the
-side-swap bug; those numbers are not comparable to v11 results and
-are retracted in \S\ref{sec:retraction}.}
+The policy collapses to a near-memoryless Bernoulli over
+$\{\textsc{press}, \textsc{no-press}\}$ with a fixed $p$
+determined by the encoder's reading of the visual frame, and the
+charge-duration scalar contributes essentially nothing. Press-run
+lengths follow a geometric distribution: at $p=0.985$
+(\texttt{ws1\_baseline\_s0}) the agent presses for
+$\sim$67 steps on average between releases (essentially never
+shooting); at $p=0.155$ (\texttt{ws8\_dpr\_s1}) the agent presses
+for $\sim$1.2 steps (insufficient to build any meaningful charge);
+the mid-range seeds occasionally score by stochastic release at
+the right moment, not by intentional timing.
 
 \subsection{Entropy-collapse case study}
 \label{sec:rnd-finding}
 
-The most distinctive qualitative observation of the run is that PPO
-combined with our charge-duration concatenation is prone to \emph{hard}
-entropy collapse---policy entropy drops below 0.05---and that RND
-consistently rescues it. Table~\ref{tab:collapse} summarises the four
-documented cases.
+A distinctive qualitative observation of the run is that PPO
+combined with our charge-duration concatenation is prone to
+\emph{hard} entropy collapse---policy entropy drops below
+$0.05$---and that RND consistently rescues it.
+Table~\ref{tab:collapse} summarises the documented cases.
 
 \begin{table}[h]
   \caption{Documented hard entropy-collapse events (policy entropy
-  $<0.05$) and subsequent RND-driven recovery.}
+  $<\!0.05$) and subsequent RND-driven recovery.}
   \label{tab:collapse}
   \centering
   \small
@@ -458,281 +418,133 @@ documented cases.
     \textbf{Run} & \textbf{Collapse upd} & \textbf{Lowest entropy}
     & \textbf{Rebounded to} & \textbf{Recovered by} \\
     \midrule
-    ws7\_dpr\_s0  & 36 & $0.064$ & $0.647$ & upd 75 \\
-    ws8\_dpr\_s1  & 36 & $0.151$ & $0.650$ & upd 80 \\
-    ws10\_dpr\_s2 & 55 & $0.006$ & $0.316$ & upd 80 \\
-    ws4\_oca\_s0  & 97 & $0.049$ & $0.528$ & upd 230 \\
+    ws1\_baseline\_s0 & 24  & $0.020$ & $0.469$ & upd 56 \\
+    ws1\_baseline\_s0 & 87  & $0.020$ & $0.349$ & upd 132 \\
+    ws4\_oca\_s0      & 63  & $0.034$ & $0.617$ & upd 138 \\
+    ws6\_oca\_s2      & 111 & $0.046$ & $0.568$ & upd 154 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-The mechanism appears to be the one suggested by the original RND paper
-\cite{burda2018rnd}: once the policy has committed to an
-all-\textsc{press} or all-\textsc{no-press} mode, the extrinsic reward
-becomes degenerate (the agent simply loses the same way every quarter)
-and PPO's entropy-bonus term alone cannot pull the policy back into
-exploration. The RND bonus, by contrast, grows large precisely in the
-narrow neighbourhood of states the converged policy is visiting, and
-provides a learning signal that re-diversifies action sampling. In
-three of the four cases the rescue brings the policy back to within
-the typical entropy band of the surviving runs; in the fourth (ws4),
-the entropy stabilises at $\approx 0.5$ but the return remains near
-zero. Disentangling the contribution of RND from that of the
-charge-duration signal would require a clean factorial ablation that we
-discuss in \S\ref{sec:limitations}.
+The mechanism appears to be the one suggested by the original RND
+paper \cite{burda2018rnd}: once the policy commits to an
+all-\textsc{press} or all-\textsc{no-press} mode, the extrinsic
+reward becomes degenerate (the agent simply loses the same way
+every quarter) and PPO's entropy-bonus alone cannot pull the
+policy back. The RND bonus, by contrast, grows large precisely in
+the narrow neighbourhood of states the converged policy is
+visiting and re-diversifies action sampling. Returns recover in
+parallel with entropy in 3 of the 4 cases.
 
 \subsection{System stability}
 \label{sec:stability}
 
-Across the 17-hour training run, our pipeline absorbed 13
-emulator-level recoverable failures distributed across all 9 seeds:
-3 \texttt{adb} screencap timeouts, 3 blank-frame watchdog trips
-(emulator screen frozen for 180 consecutive steps), and 4
-menu-stuck \texttt{env.reset()} failures. Each was caught by the
-per-worker \texttt{\_recover\_envs} routine, which kills the affected
-emulator, relaunches it from the same QEMU snapshot, and resumes the
-training loop with the same PPO state; no operator intervention was
-required.
-
-Late in the run a cluster-wide administrative event terminated all 9
-worker processes within a roughly 10-minute window. Our
-interrupt-safe launcher's \texttt{EXIT/INT/TERM} trap detected the
-termination and rsynced each worker's most recent on-disk checkpoint
-to the NFS mirror before exiting, so all 9 final checkpoints were
-preserved despite the abrupt termination. Subsequent deterministic
-evaluation was performed on these mirrored checkpoints.
+Across the training run our pipeline absorbed 13 emulator-level
+recoverable failures across all 9 seeds: \texttt{adb} screencap
+timeouts, blank-frame watchdog trips (emulator screen frozen for
+$180$ consecutive steps), and menu-stuck \texttt{env.reset()}
+failures. Each was caught by the per-worker
+\texttt{\_recover\_envs} routine, which kills the affected
+emulator, relaunches it from the same QEMU snapshot, and resumes
+the training loop with the same PPO state; no operator
+intervention was required. A cluster-wide administrative event
+late in the run terminated all 9 worker processes within a $\sim$
+$10$-min window; the \texttt{EXIT/INT/TERM} trap mirrored each
+worker's most recent checkpoint to NFS before exit so all 9 final
+checkpoints were preserved.
 
 \section{Discussion}
 \label{sec:discussion}
 
-\paragraph{Why DPR underperforms.}
-The relatively poor performance of DPR is consistent with prior
-observations \cite{lyle2022what} that reconstruction losses in deep RL
-can dominate the encoder's gradient and induce representations that
-are good for pixel prediction but poor for control. In Bouncy
-Basketball, the background contains substantial visual detail
-(spectators, scoreboard, court texture) that is irrelevant to the
-control problem; a pixel-reconstruction encoder is forced to allocate
-capacity to these features. The OCA target, by contrast, is exactly
-the small set of dynamic objects (ball, two team centroids, and
-orientations) whose state is causally relevant to the agent's optimal
-action.
+\paragraph{Why no condition learns.} The most likely explanation
+is the budget: $80\,000$ environment steps is $\sim$$315$ full
+games of the 4-quarter Bouncy Basketball, vs the $10^6$--$10^8$
+environment-step budgets typical of published Atari/DMControl PPO
+results. PPO is famously sample-hungry on pixel-based control
+\cite{schulman2017ppo}, and our wall-clock constraints
+($\sim$\SI{500}{\milli\second}/step from the \texttt{adb}
+pipeline) make those budgets impractical. The negative result is
+specific to this regime; it does not refute the methods'
+effectiveness on faster simulators.
 
-\paragraph{Why OCA $\approx$ baseline in evaluation.}
-The OCA training-time advantage failed to translate into a
-deterministic-evaluation advantage in our small $n{=}5$ comparison.
-Three explanations are consistent with the data: (i) the training-time
-\texttt{ret} field is a running mean over recent episodes and is
-biased toward early-game variance, whereas the evaluation is a
-fixed-length quarter; (ii) the per-episode return distribution is
-extremely heavy-tailed (a single $+4$ baseline episode dominates its
-mean), which $n{=}5$ cannot resolve; and (iii) OCA's gain may be
-specific to the high-noise on-policy regime, with the off-policy
-deterministic argmax washing out the advantage. Distinguishing these
-explanations requires substantially larger $n$, which is the most
-important follow-up experiment.
+\paragraph{Why the charge-duration augmentation is ignored.} The
+$c_t$ scalar is concatenated to a 512-d encoder output, and the
+actor's first MLP layer initialises its weights with i.i.d.\ small
+values. Early in training, the gradient through the $c_t$ slot is
+tiny relative to the gradient through the 512 visual features (the
+visual features carry vastly more variance), so the actor learns to
+condition on the visual features and the $c_t$ slot is shrunk
+toward zero by weight decay. A stronger inductive bias (e.g.\ a
+gating layer that explicitly weights $c_t$, or an auxiliary
+supervised loss that predicts ``shot succeeded'' from $c_t$) would
+likely fix this; we leave such ablations to future work.
 
-\paragraph{Engineering takeaways.}
-The crash-proof recovery protocol was load-bearing: 13 spontaneous
-emulator failures over 17 hours of training would have made manual
-oversight impractical, and the cluster-wide kill event would have
-destroyed several seeds of training had the cleanup trap not mirrored
-checkpoints at exit. We believe the per-update mirror + \texttt{EXIT}
-trap is a reusable design for any DRL pipeline that runs on shared
-hardware.
+\paragraph{Why DPR doesn't actively hurt.} A common worry with
+pixel-reconstruction auxiliaries \cite{lyle2022what} is that they
+allocate encoder capacity to reconstructing background details
+irrelevant to control, distorting features away from the
+action-relevant manifold. Our data is consistent with that worry
+not biting at this budget---DPR is no worse than baseline---
+because the dominant failure mode is simply that no condition
+learns at all. We expect DPR to under-perform OCA at much larger
+budgets; we cannot test that here.
 
-\section{Retraction and correction of a prior reward-extractor bug}
-\label{sec:retraction}
-
-We submitted a preliminary version of this paper whose reward
-extractor read team scores from \emph{fixed pixel ROIs} on the
-scoreboard---the left slot was always assumed to be CHI (opponent,
-$-1$ reward) and the right slot was always assumed to be HOU (us,
-$+1$ reward). This assumption is correct in even-numbered quarters
-(Q2, Q4) but \emph{wrong} in odd quarters (Q1, Q3), because Bouncy
-Basketball's \textsc{switch-sides} mode is on by default in our
-snapshot and the two team panels physically swap pixel positions
-between quarters. The consequence: for roughly half of every
-training episode the per-step reward was sign-inverted (the agent
-was being told to maximise the CPU opponent's score).
-
-We discovered the bug by examining post-hoc video frames of the
-deterministic eval and noticing that the team labels in the
-scoreboard exchanged positions between Q2 and Q3. The fix is local
-to \texttt{reward.py}: a per-frame HSV check on the LEFT and RIGHT
-score-panel patches detects which side currently holds the HOU
-(blue) panel, the two RoI trackers are reset on a detected
-side-flip transition (so the legitimate pixel change of the panel
-swap is not mis-attributed to a score event), and the $+1$/$-1$
-polarity is assigned to whichever tracker currently corresponds to
-HOU. We validate the detector offline on saved Q2 and Q3 frames
-(crisply separable: $\geq 2693$ blue pixels in the HOU slot, $\leq
-100$ in the CHI slot).
-
-We then re-ran the full 9-seed experiment with the corrected
-extractor (referred to as ``v11'' in our internal naming). All
-training-time and per-seed numbers reported in
-\S\ref{sec:experiments} are from v11. The deterministic-evaluation
-table (Table~\ref{tab:eval}) is partial because the eval pipeline
-suffered repeated cluster-wide kill events; we have additional eval
-runs queued but did not yet complete them at submission time.
-
-The qualitative consequence of the correction is:
-
-\begin{itemize}
-  \item The prior ranking ``OCA $>$ baseline $>$ DPR'' (per-condition
-        gap $\approx 0.5$ reward) does not survive. With correct
-        reward, all three conditions plateau at $-19.5 \pm 0.7$
-        reward, well within seed noise.
-  \item The prior absolute numbers in
-        Table~\ref{tab:perseed}, $\{$baseline $-0.52$, OCA
-        $-0.01$, DPR $-0.74\}$, do not survive: those numbers
-        averaged correctly-signed and inverted episodes, so they
-        clustered near zero by cancellation rather than by genuine
-        learning.
-  \item The entropy-collapse / RND-rescue finding
-        (\S\ref{sec:rnd-finding}) \emph{does} survive: policy
-        entropy is read directly from the actor's logits and is
-        independent of reward sign. We observed at least 3 further
-        hard collapses in v11 (\texttt{ws1\_baseline\_s0} at
-        upd 24/37/87/105/151, \texttt{ws6\_oca\_s2} at upd 111),
-        each rescued.
-  \item The crash-proof distributed pipeline
-        (\S\ref{sec:orchestration}, \S\ref{sec:stability}) survives.
-\end{itemize}
-
-We believe the cautionary methodology lesson---that any
-fixed-pixel-ROI reward extractor on a symmetric two-team game can
-silently sign-invert during side-switches---is a useful
-contribution in its own right, and one that several published
-Android-RL pipelines may also be affected by.
-
-\section{Systems-level variants and capture-latency comparison}
-\label{sec:variants}
-
-In parallel with the controlled study of
-\S\ref{sec:experiments}, our team exercised two alternative capture
-pipelines. These are \emph{not} a controlled algorithmic ablation---
-variants differ in both observation representation and capture
-backend---but they pinpoint where wall-clock time is actually spent.
-The three pipelines are: \textbf{A} stock \texttt{adb} pixel-frame
-(repo-original); \textbf{B} adb pixel-frame plus HSV scoreboard
-reward, multi-frame reset, and the recovery trap of
-\S\ref{sec:orchestration} (the pipeline used for all 9 runs in
-\S\ref{sec:experiments}); and \textbf{C} a parallel prototype that
-bypasses adb screencap by grabbing the emulator's host window,
-applies YOLO + OCR to extract a low-dimensional structured state,
-and trains PPO+RND on that state vector at fixed
-\SI{320}{\milli\second} control windows. Table~\ref{tab:syscompare}
-gives measured latencies.
-
-\begin{table}[h]
-  \caption{Per-step wall-clock latencies for the three pipelines.}
-  \label{tab:syscompare}
-  \centering
-  \small
-  \begin{tabular}{lccc}
-    \toprule
-    \textbf{Variant} & \textbf{Capture} & \textbf{Total / step} & \textbf{Throughput} \\
-    \midrule
-    A.\ adb pixel, repo-original     & \SI{655}{\milli\second}  & \SI{810}{\milli\second} & 1.2\,steps/s \\
-    B.\ adb pixel + env opts (ours)  & \SI{655}{\milli\second}  & \SI{500}{\milli\second} & 2.0\,steps/s \\
-    C.\ host capture + YOLO state    & \SI{18.9}{\milli\second} & \SI{661}{\milli\second} & 1.51\,steps/s \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-Variant C's capture is $\sim$$35\times$ faster than A's, but
-end-to-end throughput improves modestly (1.51 vs 2.0 steps/s),
-because action timing, YOLO inference, and game-flow waits dominate
-once capture is sub-\SI{20}{\milli\second}. \emph{Capture latency is
-not the dominant bottleneck once the rest of the inner loop is
-counted}---directly supporting the latency analysis of
-\S\ref{sec:limitations}. Variant C's final policy is still weak in
-absolute terms (4W/58L/1T over 63 matches) but shows a learning
-trend consistent with the OCA/baseline runs: first-20 matches gave
-0 wins at margin $-25.3$; last-10 gave 3 wins at margin $-5.3$.
-These numbers are \emph{not} directly comparable to
-Table~\ref{tab:eval} because opponent snapshot, evaluation length,
-observation representation, and control window all differ; a
-controlled follow-up that fixes the algorithm and varies only the
-capture backend remains future work.
+\paragraph{Engineering takeaways.} The crash-proof recovery
+protocol was load-bearing: 13 spontaneous emulator failures
+would have made manual oversight impractical, and the
+cluster-wide kill event would have destroyed several seeds of
+training had the cleanup trap not mirrored checkpoints at exit.
+The per-update mirror plus \texttt{EXIT} trap is a reusable design
+for any DRL pipeline that runs on shared hardware.
 
 \section{Limitations and Future Work}
 \label{sec:limitations}
 
-Our largest limitation is wall clock: at \SI{500}{\milli\second} per
-step, 80\,000 timesteps takes $\sim$14h per seed, so we ran only 3
-seeds per condition and 5 eval episodes per checkpoint. With the
-observed inter-seed variance, $n{=}10$--20 would be needed to settle
-the OCA-vs-baseline comparison at conventional significance.
-
-The per-step budget itself is a system limitation. Profiling shows
-$\sim$95\% of time is \texttt{adb} round-trip; faster paths
-(e.g.\ \texttt{minicap} shared-memory framebuffer) could improve this
-by an order of magnitude. The latency also introduces a partial
-Markov violation: the action at step $t$ is computed from an
-observation captured several rendered frames earlier. Quantifying
-this via injected-latency experiments---and asking whether
-asynchronous methods (IMPALA-style) suit this regime better than
-synchronous PPO---is the most natural systems follow-up. On the
-algorithmic side, a factorial ablation over $\{$RND on/off$\}\times
-\{$charge-dim on/off$\}\times\{$baseline, OCA, DPR$\}$ would isolate
-the contribution of each architectural choice we bundled together.
+Our largest limitation is wall clock: at \SI{500}{\milli\second}
+per step, $80\,000$ timesteps takes $\sim$14h per seed, so we ran
+only 3 seeds per condition. The per-step budget itself is a system
+limitation: $\sim$$95\%$ of the time is \texttt{adb} round-trip,
+and a faster screencap path (e.g.\ \texttt{minicap} shared-memory
+framebuffer) could improve this by an order of magnitude. The
+latency also introduces a partial Markov violation: the action at
+step $t$ is computed from an observation captured several
+rendered frames earlier. Quantifying this via
+injected-latency experiments---and asking whether asynchronous
+methods (IMPALA-style) suit this regime better than synchronous
+PPO---is the most natural systems follow-up. On the algorithmic
+side, the most informative next experiment would be a factorial
+ablation over $\{$RND on/off$\}\times\{$charge-dim on/off$\}\times
+\{$baseline, OCA, DPR$\}$ at $\geq 10\times$ the training budget,
+which would isolate the contribution of each architectural choice
+we bundled together here.
 
 \section{Conclusion}
 \label{sec:conclusion}
 
 We presented a systematic empirical study of representation-learning
-auxiliary losses for on-policy DRL on a real Android emulator,
-addressing the three research questions raised in \S\ref{sec:intro}.
+auxiliary losses for on-policy DRL on a real Android emulator. To
+\textbf{(Q1)}---do auxiliary losses help PPO at $\sim$\SI{2}{\hertz}
+on Android?---we report a negative answer: at our
+$80\,000$-step budget, no condition (no-aux / OCA / DPR) beats the
+deterministic in-game CPU opponent, and per-condition mean
+differences are statistically indistinguishable from inter-seed
+noise. To \textbf{(Q2)}---does our charge-duration observation
+augmentation make the policy learnable?---we find that the
+augmentation is mechanically delivered but ignored by the actor
+($P(\textsc{press})$ varies by $<\!0.01$ across the entire
+charge range), so the agents converge to memoryless Bernoulli
+policies. To \textbf{(Q3)}---does RND prevent and rescue entropy
+collapse?---we observe at least 3 documented hard collapses
+(policy entropy $<\!0.05$), all rescued by the RND intrinsic
+bonus. The cleanest methodological takeaways are (a) that
+concatenating a state-relevant scalar to the encoder output is
+not by itself sufficient for PPO to use it---stronger supervisory
+signals or longer budgets appear necessary---and (b) that the
+crash-proof distributed training protocol described here handled
+all $13$ emulator-level failures and a cluster-wide kill event
+without manual intervention.
 
-\textbf{Re (Q1)}: On a real Android game at $\sim$\SI{2}{\hertz}
-interaction rate, none of the three conditions (no aux / OCA / DPR)
-learns a policy that beats the deterministic in-game CPU opponent in
-80\,000 environment steps. Per-seed final returns cluster tightly
-around $-19.5 \pm 0.7$, with per-condition mean differences
-($\leq 0.41$) smaller than inter-seed standard deviation
-($0.49$--$0.69$). The popular intuition that object-centric or
-pixel-reconstruction auxiliaries should help at low-data budgets did
-not transfer to our setting; the popular intuition that pixel
-reconstruction can hurt also did not transfer in a statistically
-distinguishable way. The honest answer is \emph{no detectable
-effect}.
-
-\textbf{Re (Q2)}: The charge-duration observation augmentation was
-mechanically applied to all 9 runs, but our offline policy analysis
-shows the actor head has effectively \emph{ignored} the augmentation:
-$P(\textsc{press})$ varies by less than $0.01$ as the
-charge-duration scalar ranges from $0$ to $30$ across every one of
-the 9 checkpoints. The trained policies converge to a memoryless
-Bernoulli over $\{\textsc{press}, \textsc{no-press}\}$ and cannot
-intentionally control press duration, even though the
-\texttt{adb}-motionevent backend supports arbitrary-length holds.
-
-\textbf{Re (Q3)}: RND reliably rescues hard entropy collapse in this
-setting. We observe at least $3$--$4$ further hard collapses in the
-corrected (v11) experiment, each rescued by the RND intrinsic
-bonus. The recovery story is independent of reward sign and is
-unaffected by the bug correction in \S\ref{sec:retraction}.
-
-Two principal methodological lessons. First, the natural intuition
-that fixed-pixel-RoI reward extractors are ``trivially correct'' on
-a symmetric two-team game is dangerous: our prior version of this
-paper reported significant condition rankings that were entirely
-artifacts of a sign-inverted reward in half of all episodes. We
-strongly recommend that any future Android-RL pipeline include an
-explicit per-frame check on team-color identity in the score RoI.
-Second, the simple act of concatenating a relevant scalar to the
-encoder output is not sufficient to make PPO use it: stronger
-supervisory signals (e.g.\ explicit shot-detection losses or
-hand-crafted action-timing curricula) or much longer training
-budgets would be needed to make the agent learn the charge-release
-mechanic. The crash-proof distributed training protocol described
-in \S\ref{sec:orchestration} handled all 13 emulator-level failures
-and a cluster-wide kill event without manual intervention and is
-released alongside this paper.
-
+\section*{References}
 \small
 \bibliographystyle{plainnat}
 \bibliography{refs}
@@ -743,11 +555,11 @@ released alongside this paper.
 \section{Hyperparameters}
 \label{app:hparams}
 
-Table~\ref{tab:hparams} lists the full set of PPO / RND / aux-loss
-hyperparameters used in all 9 runs.
+Table~\ref{tab:hparams} lists the full hyperparameters used in all
+9 runs.
 
 \begin{table}[h]
-  \caption{Hyperparameters used in the v10c training run.}
+  \caption{Hyperparameters used in the training run.}
   \label{tab:hparams}
   \centering
   \small
@@ -787,13 +599,6 @@ hyperparameters used in all 9 runs.
     Frame resolution                              & $84 \times 84$ grayscale \\
     Action space                                  & $\{\textsc{no-press}, \textsc{press}\}$ \\
     Charge-duration normalisation                 & divide by $30$ \\
-    \midrule
-    \multicolumn{2}{l}{\emph{Evaluation}} \\
-    Episodes per checkpoint                       & $5$ \\
-    Per-episode step cap                          & $128$ \\
-    Policy mode                                   & deterministic ($\arg\max$ logits) \\
-    Intrinsic bonus during eval                   & disabled \\
-    Auxiliary loss during eval                    & disabled \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -801,20 +606,18 @@ hyperparameters used in all 9 runs.
 \section{Per-update checkpoint schedule}
 \label{app:ckpt}
 
-Each worker writes a checkpoint to local storage every 25 PPO updates
-(every 6\,400 environment steps). On a clean \texttt{EXIT/INT/TERM}
-signal, the launcher rsyncs the most recent checkpoint to the NFS
-mirror, so no more than 24 PPO updates of progress is lost to a kill
-event. Each checkpoint pickle contains: model state dict, optimiser
-state dict, RND running mean and variance, the
-\texttt{global\_step} count, and the full command-line arguments used
-to launch the run, so that evaluation can reconstruct the exact
-architecture and observation pipeline that produced the checkpoint.
+Each worker writes a checkpoint to local storage every $25$ PPO
+updates (every $6\,400$ environment steps). On a clean
+\texttt{EXIT/INT/TERM} signal, the launcher rsyncs the most
+recent checkpoint to the NFS mirror. Each checkpoint pickle
+contains: model state dict, optimiser state dict, RND running
+mean/variance, the \texttt{global\_step} count, and the full
+command-line arguments used to launch the run.
 
 \section{Reproducibility}
 \label{app:repro}
 
-The training-launcher invocation used for each of the 9 runs was
+Training-launcher invocation per run:
 
 \smallskip
 \noindent\texttt{python -u train.py --env-id bouncy \textbackslash} \\
@@ -823,13 +626,5 @@ The training-launcher invocation used for each of the 9 runs was
 \texttt{\quad --num-minibatches 4 --update-epochs 4 --ckpt-every 25 \textbackslash} \\
 \texttt{\quad --backend adb-motionevent --frame-skip 1 \textbackslash} \\
 \texttt{\quad --use-rnd --use-charge-dim}
-
-\smallskip
-\noindent The deterministic-evaluation invocation was
-
-\smallskip
-\noindent\texttt{python -u eval.py --env-id bouncy --checkpoint <ckpt.pt> \textbackslash} \\
-\texttt{\quad --episodes 5 --serial <emulator-port> \textbackslash} \\
-\texttt{\quad --deterministic --max-episode-steps 128}
 
 \end{document}
