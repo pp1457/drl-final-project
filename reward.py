@@ -197,27 +197,55 @@ class _ScoreboardRoiTracker:
         return event
 
 
+# 2026-05-26 fix: SWITCH-SIDES is *on* in clean_boot_v8 (despite our prior
+# assumption it was off). Between quarters the HOU/CHI score panels swap
+# physical sides on the scoreboard. The original code assumed HOU was
+# always at the right slot, which inverted the reward signal in Q1/Q3.
+#
+# Fix: detect which side has the BLUE panel (HOU's color) per-frame.
+# HSV blue counts in left/right slots cleanly separate the two layouts
+# (Q2 normal: LEFT red=2347 BLUE=0, RIGHT blue=2693 red=0;
+#  Q3 swap:   LEFT blue=2693 red=0, RIGHT blue=0 red=1334).
+def _hou_is_on_left(rgb_frame: np.ndarray,
+                    left_roi: tuple[int, int, int, int],
+                    right_roi: tuple[int, int, int, int]) -> Optional[bool]:
+    """Return True if HOU (blue) panel is currently on the LEFT slot,
+    False if normal (HOU on RIGHT), None if neither slot has a clear
+    team color (e.g. during the END-OF-QUARTER overlay)."""
+    ly0, ly1, lx0, lx1 = left_roi
+    ry0, ry1, rx0, rx1 = right_roi
+    H, W = rgb_frame.shape[:2]
+    if ly1 > H or lx1 > W or ry1 > H or rx1 > W:
+        return None
+    hsv_l = cv2.cvtColor(rgb_frame[ly0:ly1, lx0:lx1], cv2.COLOR_RGB2HSV)
+    hsv_r = cv2.cvtColor(rgb_frame[ry0:ry1, rx0:rx1], cv2.COLOR_RGB2HSV)
+    blue_l = cv2.inRange(hsv_l, np.array([100, 80, 50]),
+                         np.array([130, 255, 255])).sum() / 255
+    blue_r = cv2.inRange(hsv_r, np.array([100, 80, 50]),
+                         np.array([130, 255, 255])).sum() / 255
+    # Need a clear majority of blue pixels (>=300) on exactly one side.
+    if blue_l >= 300 and blue_r < 100:
+        return True
+    if blue_r >= 300 and blue_l < 100:
+        return False
+    return None
+
+
 class ScoreboardDiffReward:
-    """Reward extractor that detects scoring events by pixel-diffing two
-    scoreboard ROIs (CHI for the agent's team, HOU for the opponent).
+    """Reward extractor that detects scoring events by pixel-diffing the
+    two scoreboard score-digit ROIs, and assigns +1 / -1 polarity by which
+    side currently holds the HOU (blue) panel.
 
-    Returns a net cumulative score where each CHI basket counts +1 and each
-    HOU basket counts `OPPONENT_WEIGHT` (default -1.0). The env's per-step
-    reward is the delta of this net score, so:
-      - CHI scores  → reward = +1.0 that step
-      - HOU scores  → reward = -1.0 that step
-      - otherwise   → reward =  0.0
+    Reward semantics (HOU is the agent's team, CHI is the CPU opponent):
+      - HOU scores  → +1.0 that step
+      - CHI scores  → OPPONENT_WEIGHT (default -1.0)
+      - otherwise   →  0.0
 
-    For backward compatibility with the May 22 matrix, set
-    `REWARD.opponent_score_weight = 0.0` to recover the score-only behavior.
-
-    Pros over digit OCR:
-      - no digit templates needed; works for arbitrary score values
-      - tolerant of small visual noise
-    Cons:
-      - +1 vs +2 vs +3-point shots collapsed to one event each (PPO learns
-        from event density, not point value)
-      - false-positive risk on visual flickers; mitigated by cooldown
+    Two ROIs are tracked, one at the LEFT pixel slot and one at the RIGHT
+    pixel slot. Which slot is "HOU" is detected per-frame by checking
+    panel colour (HOU = blue, CHI = red). When the side ordering flips
+    (e.g. at a quarter boundary) we reset both trackers so the legitimate
+    pixel change due to the panel swap is NOT counted as a score event.
     """
 
     def __init__(
@@ -229,20 +257,30 @@ class ScoreboardDiffReward:
     ):
         s = VISION.vision_scale if scale is None else scale
         self._scale = s
-        self._chi = _ScoreboardRoiTracker(_scaled_roi(chi_roi, s))
-        self._hou = _ScoreboardRoiTracker(_scaled_roi(hou_roi, s))
+        # The two physical slot ROIs. The historical names chi_roi and
+        # hou_roi are pixel positions; we now treat them as left/right
+        # positions and re-resolve which team owns each slot per-frame.
+        # By convention: hou_roi is the LEFT slot, chi_roi is the RIGHT
+        # slot (matches config.py x0 values: 1000 < 1250).
+        if hou_roi[2] < chi_roi[2]:
+            left_roi, right_roi = hou_roi, chi_roi
+        else:
+            left_roi, right_roi = chi_roi, hou_roi
+        self._left_roi_unscaled = left_roi
+        self._right_roi_unscaled = right_roi
+        self._left = _ScoreboardRoiTracker(_scaled_roi(left_roi, s))
+        self._right = _ScoreboardRoiTracker(_scaled_roi(right_roi, s))
         self._opponent_weight = float(opponent_weight)
         self._net_score = 0.0
+        self._last_hou_left: Optional[bool] = None
 
     def reset(self) -> None:
-        self._chi.reset()
-        self._hou.reset()
+        self._left.reset()
+        self._right.reset()
         self._net_score = 0.0
+        self._last_hou_left = None
 
     def __call__(self, rgb_frame: np.ndarray) -> tuple[float, bool]:
-        # If we're operating at a downsampled scale, resize the frame to match
-        # the scaled ROIs. (We do this once here so detect_pose and reward
-        # both see a frame of the same size.)
         if self._scale != 1.0:
             h, w = rgb_frame.shape[:2]
             rgb_frame = cv2.resize(
@@ -250,14 +288,45 @@ class ScoreboardDiffReward:
                 (int(w * self._scale), int(h * self._scale)),
                 interpolation=cv2.INTER_AREA,
             )
-        # GAME OVER reading first — its red text would otherwise trip the
-        # ROI diff. When GAME OVER is true we report no score change and let
-        # the env reset.
-        done = is_game_over(rgb_frame, scale=1.0)  # frame already at our scale
+        done = is_game_over(rgb_frame, scale=1.0)
         if done:
             return self._net_score, True
-        if self._chi.step(rgb_frame):
-            self._net_score += 1.0
-        if self._hou.step(rgb_frame):
-            self._net_score += self._opponent_weight
+
+        # Per-frame side detection. Compare with the previous frame's
+        # ordering; if it changed (quarter swap), reset both trackers
+        # so the panel-swap pixel change doesn't fire a false score.
+        # Use the scaled ROIs for color detection so the patches actually
+        # cover the right pixels at the runtime resolution.
+        hou_left_now = _hou_is_on_left(
+            rgb_frame,
+            _scaled_roi(self._left_roi_unscaled, self._scale),
+            _scaled_roi(self._right_roi_unscaled, self._scale),
+        )
+        if hou_left_now is not None:
+            if (self._last_hou_left is not None
+                    and hou_left_now != self._last_hou_left):
+                # Side ordering flipped — silence one frame of diff.
+                self._left.reset()
+                self._right.reset()
+            self._last_hou_left = hou_left_now
+
+        left_event = self._left.step(rgb_frame)
+        right_event = self._right.step(rgb_frame)
+
+        # Only commit reward when we know which side is which.
+        if self._last_hou_left is True:
+            # Swapped layout: LEFT = HOU (+1), RIGHT = CHI (opp weight).
+            if left_event:
+                self._net_score += 1.0
+            if right_event:
+                self._net_score += self._opponent_weight
+        elif self._last_hou_left is False:
+            # Normal layout: LEFT = CHI (opp), RIGHT = HOU (+1).
+            if left_event:
+                self._net_score += self._opponent_weight
+            if right_event:
+                self._net_score += 1.0
+        # else: side ordering unknown (transition / overlay) → skip event
+        # this frame; cooldown in tracker handles bouncing.
+
         return self._net_score, False
