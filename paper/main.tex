@@ -34,7 +34,7 @@ Deep reinforcement learning (DRL) has been studied extensively on
 fast, idealised simulators, but its behaviour on the slow, partially
 non-Markovian regime imposed by real consumer operating systems is
 poorly understood. We take a step toward filling this gap with the
-first systematic empirical study of auxiliary-representation losses
+empirical study of auxiliary-representation losses
 for on-policy DRL on a real Android emulator. Our domain is the
 physics-based mobile game \emph{Bouncy Basketball}, accessed through
 the stock Android Debug Bridge at an effective interaction rate of
@@ -63,9 +63,9 @@ observation: $P(\textsc{press})$ varies by less than $0.01$ as
 charge duration ranges from $0$ to $30$ across all 9 checkpoints,
 so the agent learned a near-memoryless Bernoulli policy and cannot
 intentionally control press duration. Two methodological findings
-do stand out: (i) Random Network Distillation reliably rescues hard
+do stand out: (i) Random Network Distillation co-occurred with recovery from hard
 entropy-collapse events ($\geq 3$ documented cases), and (ii) a
-crash-proof distributed pipeline that handled 13 emulator-level
+crash-proof distributed pipeline that handled 10 emulator-level
 failures and a cluster-wide kill event without operator
 intervention. We release training logs, eval JSONs and the full
 distributed training launcher.
@@ -166,7 +166,7 @@ running-mean returns and per-policy offline analysis.
   \item \textbf{(C4) A reproducible distributed training pipeline}
         with an interrupt-safe \texttt{EXIT/INT/TERM} trap that
         rsyncs the most recent checkpoint to NFS on any termination;
-        the pipeline survived 13 emulator-level failures and a
+        the pipeline survived 10 emulator-level failures and a
         cluster-wide kill event without losing a final checkpoint.
 \end{itemize}
 
@@ -488,7 +488,7 @@ the right moment, not by intentional timing.
 A distinctive qualitative observation of the run is that PPO
 combined with our charge-duration concatenation is prone to
 \emph{hard} entropy collapse---policy entropy drops below
-$0.05$---and that RND consistently rescues it.
+$0.05$---and that recovery was observed when RND was active.
 Table~\ref{tab:collapse} summarises the documented cases.
 
 \begin{table}[h]
@@ -523,7 +523,7 @@ parallel with entropy in 3 of the 4 cases.
 \subsection{System stability}
 \label{sec:stability}
 
-Across the training run our pipeline absorbed 13 emulator-level
+Across the training run our pipeline absorbed 10 emulator-level
 recoverable failures across all 9 seeds: \texttt{adb} screencap
 timeouts, blank-frame watchdog trips (emulator screen frozen for
 $180$ consecutive steps), and menu-stuck \texttt{env.reset()}
@@ -574,7 +574,7 @@ learns at all. We expect DPR to under-perform OCA at much larger
 budgets; we cannot test that here.
 
 \paragraph{Engineering takeaways.} The crash-proof recovery
-protocol was load-bearing: 13 spontaneous emulator failures
+protocol was load-bearing: 10 spontaneous emulator failures
 would have made manual oversight impractical, and the
 cluster-wide kill event would have destroyed several seeds of
 training had the cleanup trap not mirrored checkpoints at exit.
@@ -584,6 +584,29 @@ for any DRL pipeline that runs on shared hardware.
 \section{Limitations and Future Work}
 \label{sec:limitations}
 
+\paragraph{Supervised vs self-supervised asymmetry (OCA vs DPR).}
+OCA's regression targets come from a hand-crafted HSV-mask plus
+connected-components detector that provides explicit ball/player
+coordinates and orientations. DPR is fully self-supervised on raw
+pixels. The two losses therefore operate under qualitatively
+different information regimes, and any apparent OCA advantage
+could reflect supervised signal access rather than object-centric
+representational structure per se. A fair comparison would replace
+the hand-crafted detector with an unsupervised keypoint bottleneck
+(e.g.\ Spatial Softmax over encoder feature maps); this is the
+primary algorithmic follow-up we plan.
+
+\paragraph{Bundled RND and charge-duration augmentation.} All 9
+main runs use both \texttt{--use-rnd} and
+\texttt{--use-charge-dim}; we therefore cannot causally attribute
+either the entropy-collapse recoveries or any aspect of
+training-time behaviour to RND alone or the charge-duration scalar
+alone. The factorial ablation
+$\{\text{RND on/off}\}\times\{\text{charge-dim on/off}\}\times
+\{\text{baseline, OCA, DPR}\}$ is the most important algorithmic
+follow-up.
+
+\paragraph{Wall-clock and sample size.}
 Our largest limitation is wall clock: at \SI{500}{\milli\second}
 per step, $80\,000$ timesteps takes $\sim$14h per seed, so we ran
 only 3 seeds per condition. The per-step budget itself is a system
