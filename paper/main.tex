@@ -685,8 +685,41 @@ concatenating a state-relevant scalar to the encoder output is
 not by itself sufficient for PPO to use it---stronger supervisory
 signals or longer budgets appear necessary---and (b) that the
 crash-proof distributed training protocol described here handled
-all $13$ emulator-level failures and a cluster-wide kill event
+all $10$ emulator-level failures and a cluster-wide kill event
 without manual intervention.
+
+\section*{Member Workload}
+\label{sec:workload}
+
+\begin{itemize}
+  \item \textbf{[Member A]}: \emph{Engineering and infrastructure.}
+    Distributed training pipeline (\texttt{orchestrate.py},
+    \texttt{launch\_on\_ws.sh}), crash-proof
+    \texttt{EXIT/INT/TERM} trap with NFS checkpoint mirroring, adb
+    backend (\texttt{adb-motionevent} with state-based DOWN/UP
+    semantics), emulator AVD configuration and \texttt{clean\_boot\_v8}
+    snapshot construction.
+  \item \textbf{[Member B]}: \emph{Vision and reward.}
+    HSV-mask + connected-components pose detector for OCA targets,
+    score-event detector (\texttt{ScoreboardDiffReward}) with
+    per-frame panel-colour side detection, game-over watchdog and
+    blank-frame recovery, the offline P(press) charge-duration
+    diagnostic (Table~\ref{tab:charge_ignored}).
+  \item \textbf{[Member C]}: \emph{Algorithmic and experiments.}
+    PPO + RND + charge-duration integration in \texttt{train.py},
+    Agent architecture (NatureCNN encoder, auxiliary heads for OCA
+    and DPR), training-curve parsing and figure generation, eval
+    protocol implementation (\texttt{eval.py}), random-baseline
+    control, RND-off ablation.
+  \item \textbf{[Member D]}: \emph{Analysis and writing.}
+    Statistical testing (CIs + Welch / Mann--Whitney), per-seed
+    table assembly, entropy-collapse case-study compilation,
+    methodology audits and consistency checks, paper writing and
+    figure preparation.
+\end{itemize}
+
+\noindent Each section of the paper was reviewed by all members; the
+listed lead is the primary contributor.
 
 \section*{References}
 \small
