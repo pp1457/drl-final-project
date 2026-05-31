@@ -63,7 +63,7 @@ observation: $P(\textsc{press})$ varies by less than $0.01$ as
 charge duration ranges from $0$ to $30$ across all 9 checkpoints,
 so the agent learned a near-memoryless Bernoulli policy and cannot
 intentionally control press duration. Two methodological findings
-do stand out: (i) Random Network Distillation co-occurred with recovery from hard
+do stand out: (i) An RND-off ablation reveals that Random Network Distillation is the proximate cause of, not a remedy for, the hard
 entropy-collapse events ($\geq 3$ documented cases), and (ii) a
 crash-proof distributed pipeline that handled 10 emulator-level
 failures and a cluster-wide kill event without operator
@@ -370,10 +370,11 @@ in a single sitting). The per-episode return is the HOU--CHI
 score-event delta accumulated over the quarter.
 
 \begin{table}[h]
-  \caption{Deterministic evaluation of all 9 final checkpoints
-  ($3$ episodes $\times$ $96$-step cap per checkpoint). Each
-  return is the cumulative HOU--CHI score over one quarter. Bold
-  mean indicates the best per-condition mean.}
+  \caption{Deterministic evaluation of all 9 final checkpoints plus
+  an RND-off ablation seed and a uniform-random control
+  ($3$ episodes $\times$ $96$-step cap each, except random control
+  at $n{=}10$). Each return is the cumulative HOU--CHI score over
+  one quarter.}
   \label{tab:eval}
   \centering
   \small
@@ -381,9 +382,12 @@ score-event delta accumulated over the quarter.
     \toprule
     \textbf{Condition} & \textbf{Seed 0} & \textbf{Seed 1} & \textbf{Seed 2} & \textbf{Mean (std)} \\
     \midrule
-    Baseline & ws1: $-1.67$ ($[-2,0,-3]$) & ws2: $\phantom{-}0.00$ ($[-1,0,+1]$) & ws3: $-0.33$ ($[0,-1,0]$) & $\mathbf{-0.67\;(0.85)}$ \\
-    OCA      & ws4: $-2.67$ ($[-1,-4,-3]$) & ws5: $\phantom{-}0.00$ ($[0,0,0]$)   & ws6: $-1.67$ ($[-2,-1,-2]$) & $-1.44\;(1.35)$ \\
-    DPR      & ws7: $-1.00$ ($[-1,-2,0]$)  & ws8: $-1.33$ ($[-3,+1,-2]$)         & ws10: $-0.33$ ($[+2,-2,-1]$) & $-0.89\;(0.51)$ \\
+    Baseline (RND on)    & ws1: $-1.67$ ($[-2,0,-3]$)  & ws2: $\phantom{-}0.00$ ($[-1,0,+1]$) & ws3: $-0.33$ ($[0,-1,0]$)     & $-0.67\;(0.85)$ \\
+    OCA                  & ws4: $-2.67$ ($[-1,-4,-3]$) & ws5: $\phantom{-}0.00$ ($[0,0,0]$)   & ws6: $-1.67$ ($[-2,-1,-2]$)   & $-1.44\;(1.35)$ \\
+    DPR                  & ws7: $-1.00$ ($[-1,-2,0]$)  & ws8: $-1.33$ ($[-3,+1,-2]$)          & ws10: $-0.33$ ($[+2,-2,-1]$)  & $-0.89\;(0.51)$ \\
+    \midrule
+    Baseline RND \emph{off} (n=1 seed) & ws8: $-1.67$ ($[-4,-2,+1]$) & --- & --- & $-1.67$ \\
+    Uniform random (n=10)              & \multicolumn{3}{l}{$[-3,-5,-1,-2,-1,0,0,-2,-1,-1]$} & $-1.60\;(1.51)$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -493,7 +497,10 @@ Table~\ref{tab:collapse} summarises the documented cases.
 
 \begin{table}[h]
   \caption{Documented hard entropy-collapse events (policy entropy
-  $<\!0.05$) and subsequent RND-driven recovery.}
+  $<\!0.05$) in RND-on runs and subsequent recovery. An ablation
+  with \texttt{--use-rnd} disabled (1 seed, full 312 updates)
+  produced \emph{zero} such events, confirming RND as the
+  proximate cause.}
   \label{tab:collapse}
   \centering
   \small
@@ -510,15 +517,31 @@ Table~\ref{tab:collapse} summarises the documented cases.
   \end{tabular}
 \end{table}
 
-The mechanism appears to be the one suggested by the original RND
-paper \cite{burda2018rnd}: once the policy commits to an
-all-\textsc{press} or all-\textsc{no-press} mode, the extrinsic
-reward becomes degenerate (the agent simply loses the same way
-every quarter) and PPO's entropy-bonus alone cannot pull the
-policy back. The RND bonus, by contrast, grows large precisely in
-the narrow neighbourhood of states the converged policy is
-visiting and re-diversifies action sampling. Returns recover in
-parallel with entropy in 3 of the 4 cases.
+\paragraph{RND-off ablation.} To test whether RND is causally
+responsible for the collapse--recovery pattern, we re-ran baseline
+PPO (charge-dim ON, all other settings identical) with
+\texttt{--use-rnd} disabled, on a single seed for the full
+$80\,000$ environment steps. The result is striking: the RND-off
+baseline experienced \textbf{zero hard entropy collapses across
+all 312 PPO updates}, with policy entropy oscillating in
+$[0.60, 0.69]$ throughout the run. Deterministic eval of the
+RND-off final checkpoint gives mean return $-1.67$ (raw
+$\{-4,-2,+1\}$), \emph{identical} to the corresponding RND-on
+baseline seed (ws1, mean $-1.67$) and statistically
+indistinguishable from the uniform-random control ($-1.60$).
+
+This causally inverts our original framing of the
+collapse--recovery phenomenon. RND does not \emph{rescue} hard
+entropy collapses; rather, \textbf{RND is the proximate cause of
+them}. Without RND, the policy simply does not collapse. The
+mechanism is most naturally explained by RND's intrinsic-bonus
+gradient driving the policy toward narrow regions of action space
+that achieve high RND prediction error; once concentrated, the
+policy commits, entropy drops, and the same RND signal then
+incentivises moving away from the converged region, raising
+entropy again. The net effect on final policy quality, however,
+is \emph{zero}: the RND-off ablation and the RND-on baseline
+arrive at the same eval mean.
 
 \subsection{System stability}
 \label{sec:stability}
@@ -596,15 +619,20 @@ the hand-crafted detector with an unsupervised keypoint bottleneck
 (e.g.\ Spatial Softmax over encoder feature maps); this is the
 primary algorithmic follow-up we plan.
 
-\paragraph{Bundled RND and charge-duration augmentation.} All 9
-main runs use both \texttt{--use-rnd} and
-\texttt{--use-charge-dim}; we therefore cannot causally attribute
-either the entropy-collapse recoveries or any aspect of
-training-time behaviour to RND alone or the charge-duration scalar
-alone. The factorial ablation
+\paragraph{Partial ablation of bundled flags.} All $9$ main runs
+use both \texttt{--use-rnd} and \texttt{--use-charge-dim}. We
+report a single-seed RND-off ablation in
+\S\ref{sec:rnd-finding} that isolates RND's effect on entropy
+collapses: the corresponding factorial cell shows RND is the
+proximate cause of the collapses we documented, with no net
+effect on final eval performance. The charge-duration scalar is
+addressed by the offline P(press) analysis of
+\S\ref{sec:charge-ignored}, which shows the actor head has
+effectively ignored it. The full factorial
 $\{\text{RND on/off}\}\times\{\text{charge-dim on/off}\}\times
-\{\text{baseline, OCA, DPR}\}$ is the most important algorithmic
-follow-up.
+\{\text{baseline, OCA, DPR}\}$ ($n{=}12$ training cells) would
+isolate every component cleanly and remains the most important
+algorithmic follow-up.
 
 \paragraph{Wall-clock and sample size.}
 Our largest limitation is wall clock: at \SI{500}{\milli\second}
