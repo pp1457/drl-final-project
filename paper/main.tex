@@ -697,34 +697,44 @@ without manual intervention.
 \label{sec:workload}
 
 \begin{itemize}
-  \item \textbf{[Member A]}: \emph{Engineering and infrastructure.}
-    Distributed training pipeline (\texttt{orchestrate.py},
-    \texttt{launch\_on\_ws.sh}), crash-proof
-    \texttt{EXIT/INT/TERM} trap with NFS checkpoint mirroring, adb
-    backend (\texttt{adb-motionevent} with state-based DOWN/UP
-    semantics), emulator AVD configuration and \texttt{clean\_boot\_v8}
-    snapshot construction.
-  \item \textbf{[Member B]}: \emph{Vision and reward.}
-    HSV-mask + connected-components pose detector for OCA targets,
-    score-event detector (\texttt{ScoreboardDiffReward}) with
-    per-frame panel-colour side detection, game-over watchdog and
-    blank-frame recovery, the offline P(press) charge-duration
-    diagnostic (Table~\ref{tab:charge_ignored}).
-  \item \textbf{[Member C]}: \emph{Algorithmic and experiments.}
-    PPO + RND + charge-duration integration in \texttt{train.py},
-    Agent architecture (NatureCNN encoder, auxiliary heads for OCA
-    and DPR), training-curve parsing and figure generation, eval
-    protocol implementation (\texttt{eval.py}), random-baseline
-    control, RND-off ablation.
-  \item \textbf{[Member D]}: \emph{Analysis and writing.}
-    Statistical testing (CIs + Welch / Mann--Whitney), per-seed
-    table assembly, entropy-collapse case-study compilation,
-    methodology audits and consistency checks, paper writing and
-    figure preparation.
+  \item \textbf{[B12902046 Yun-Yang Liao]}: \emph{Experiments, infrastructure, and writing.}
+    Distributed training pipeline and emulator orchestration
+    (\texttt{orchestrate.py}, \texttt{launch\_on\_ws.sh},
+    \texttt{clean\_boot\_v8} snapshot), crash-proof checkpoint
+    mirroring, coordination of the 9-ws training matrix and the
+    RND-off ablation, manual scoreboard verification, statistical
+    analysis and paper drafting.
+  \item \textbf{[B12902140 Cheng-Hsin Tsai]}: \emph{RL Algorithms and Architecture.}
+    Responsible for implementing the core PPO backbone with GAE and
+    the shared NatureCNN encoder. Integrated the 1-d press-count
+    charge-duration augmentation into the observation space and
+    tuned the base hyperparameters.
+  \item \textbf{[B12902117 Kai-Hsin Shao]}: \emph{Environment and experiments.}
+    Contributed to the Android RL environment setup, YOLO perception
+    pipeline, reward/state design, and DQN/RL training workflow.
+    Helped debug real-time detection, score extraction, action
+    execution, emulator reset handling, and training stability
+    issues. Also responsible for running experiments, analyzing logs
+    and documenting the key findings.
+  \item \textbf{[B12902052 You-Chen Lai]}: \emph{YOLO pipeline and host-capture training.}
+    YOLO-based labeling and detection of player characters and ball
+    positions, converting visual detections into compact RL state
+    features. Implemented the PPO training backbone with 4-stacked
+    observations to capture short-term motion and improve decision
+    timing. Integrated YOLO inference, state extraction, screen-press
+    control, score/possession tracking, and training logs into a
+    complete real-game learning loop. Compared ADB capture with
+    host-screen capture and shifted the final experiments toward the
+    host method because of its much lower latency and better
+    suitability for long training runs.
+  \item \textbf{[B12902131 Bo-Yu Chen]}: \emph{Low-latency simulator and distributed PPO.}
+    Researched and developed a stable Android simulation and control
+    environment with a round-trip time under 100 milliseconds for
+    reinforcement learning training, and deployed a custom
+    distributed Proximal Policy Optimization implementation across
+    nine CPU workstations and one GPU workstation to achieve a
+    $10\times$ increase in training speed.
 \end{itemize}
-
-\noindent Each section of the paper was reviewed by all members; the
-listed lead is the primary contributor.
 
 % Some NeurIPS-flavoured style files re-define \bibsection to auto-add a
 % References heading. To avoid a duplicate, suppress it and add our own
