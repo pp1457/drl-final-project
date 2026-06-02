@@ -1,5 +1,9 @@
 \documentclass{article}
 
+% Pass `numbers, compress` to natbib BEFORE neurips_2026.sty loads it,
+% so \cite{key} produces compact numeric citations like [1, 2, 3].
+\PassOptionsToPackage{numbers, compress}{natbib}
+
 % NeurIPS 2026 — Main Track, default option (anonymous, double-blind,
 % line numbers visible). Do NOT add `final` until camera-ready.
 \usepackage{neurips_2026}
@@ -721,9 +725,13 @@ without manual intervention.
 \noindent Each section of the paper was reviewed by all members; the
 listed lead is the primary contributor.
 
+% Some NeurIPS-flavoured style files re-define \bibsection to auto-add a
+% References heading. To avoid a duplicate, suppress it and add our own
+% heading explicitly so we control placement.
+\renewcommand{\bibsection}{}
 \section*{References}
 \small
-\bibliographystyle{plainnat}
+\bibliographystyle{unsrtnat}
 \bibliography{refs}
 \normalsize
 
