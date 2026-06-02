@@ -375,10 +375,11 @@ score-event delta accumulated over the quarter.
 
 \begin{table}[h]
   \caption{Deterministic evaluation of all 9 final checkpoints plus
-  an RND-off ablation seed and a uniform-random control
-  ($3$ episodes $\times$ $96$-step cap each, except random control
-  at $n{=}10$). Each return is the cumulative HOU--CHI score over
-  one quarter.}
+  a 1-seed RND-off ablation and a uniform-random control. All cells
+  are mean returns over $3$ deterministic episodes $\times$
+  $96$-step cap (random control: $n{=}10$ episodes). Raw
+  per-episode returns are listed in
+  Appendix~\ref{app:eval-raw}.}
   \label{tab:eval}
   \centering
   \small
@@ -386,12 +387,12 @@ score-event delta accumulated over the quarter.
     \toprule
     \textbf{Condition} & \textbf{Seed 0} & \textbf{Seed 1} & \textbf{Seed 2} & \textbf{Mean (std)} \\
     \midrule
-    Baseline (RND on)    & ws1: $-1.67$ ($[-2,0,-3]$)  & ws2: $\phantom{-}0.00$ ($[-1,0,+1]$) & ws3: $-0.33$ ($[0,-1,0]$)     & $-0.67\;(0.85)$ \\
-    OCA                  & ws4: $-2.67$ ($[-1,-4,-3]$) & ws5: $\phantom{-}0.00$ ($[0,0,0]$)   & ws6: $-1.67$ ($[-2,-1,-2]$)   & $-1.44\;(1.35)$ \\
-    DPR                  & ws7: $-1.00$ ($[-1,-2,0]$)  & ws8: $-1.33$ ($[-3,+1,-2]$)          & ws10: $-0.33$ ($[+2,-2,-1]$)  & $-0.89\;(0.51)$ \\
+    Baseline (RND on) & $-1.67$ & $\phantom{-}0.00$ & $-0.33$ & $-0.67\;(0.85)$ \\
+    OCA               & $-2.67$ & $\phantom{-}0.00$ & $-1.67$ & $-1.44\;(1.35)$ \\
+    DPR               & $-1.00$ & $-1.33$           & $-0.33$ & $-0.89\;(0.51)$ \\
     \midrule
-    Baseline RND \emph{off} (n=1 seed) & ws8: $-1.67$ ($[-4,-2,+1]$) & --- & --- & $-1.67$ \\
-    Uniform random (n=10)              & \multicolumn{3}{l}{$[-3,-5,-1,-2,-1,0,0,-2,-1,-1]$} & $-1.60\;(1.51)$ \\
+    Baseline RND \emph{off} (1 seed) & $-1.67$ & --- & --- & $-1.67$ \\
+    Uniform random ($n{=}10$)         & \multicolumn{3}{c}{(pooled over $10$ episodes)} & $-1.60\;(1.51)$ \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -784,6 +785,35 @@ Table~\ref{tab:hparams} lists the full hyperparameters used in all
     Frame resolution                              & $84 \times 84$ grayscale \\
     Action space                                  & $\{\textsc{no-press}, \textsc{press}\}$ \\
     Charge-duration normalisation                 & divide by $30$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Raw deterministic-evaluation episode returns}
+\label{app:eval-raw}
+
+Per-episode HOU--CHI score deltas (one quarter each, 96-step cap)
+for every entry in Table~\ref{tab:eval}:
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Run} & \textbf{Condition} & \textbf{Per-episode returns} \\
+    \midrule
+    ws1\_s0  & Baseline (RND on)              & $\{-2,\;\phantom{-}0,\;-3\}$ \\
+    ws2\_s1  & Baseline (RND on)              & $\{-1,\;\phantom{-}0,\;+1\}$ \\
+    ws3\_s2  & Baseline (RND on)              & $\{\phantom{-}0,\;-1,\;\phantom{-}0\}$ \\
+    ws4\_s0  & OCA                            & $\{-1,\;-4,\;-3\}$ \\
+    ws5\_s1  & OCA                            & $\{\phantom{-}0,\;\phantom{-}0,\;\phantom{-}0\}$ \\
+    ws6\_s2  & OCA                            & $\{-2,\;-1,\;-2\}$ \\
+    ws7\_s0  & DPR                            & $\{-1,\;-2,\;\phantom{-}0\}$ \\
+    ws8\_s1  & DPR                            & $\{-3,\;+1,\;-2\}$ \\
+    ws10\_s2 & DPR                            & $\{+2,\;-2,\;-1\}$ \\
+    \midrule
+    ws8\_s0  & Baseline RND \emph{off}        & $\{-4,\;-2,\;+1\}$ \\
+    ---      & Uniform random ($n{=}10$)      & $\{-3,\;-5,\;-1,\;-2,\;-1,\;\phantom{-}0,\;\phantom{-}0,\;-2,\;-1,\;-1\}$ \\
     \bottomrule
   \end{tabular}
 \end{table}
