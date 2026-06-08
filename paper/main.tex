@@ -43,7 +43,7 @@
 Deep reinforcement learning (DRL) has been studied extensively on
 fast, idealised simulators, but its behaviour on the slow, partially
 non-Markovian regime imposed by real consumer operating systems is
-poorly understood. We take a step toward filling this gap with the
+poorly understood. We take a step toward filling this gap with an
 exploratory systems-level empirical study of auxiliary-representation losses
 for on-policy DRL on a real Android emulator. Our domain is the
 physics-based mobile game \emph{Bouncy Basketball}, accessed through
@@ -74,7 +74,8 @@ charge duration ranges from $0$ to $30$ across all 9 checkpoints,
 so the agent learned a near-memoryless Bernoulli policy and cannot
 intentionally control press duration. Two methodological findings
 do stand out: (i) An RND-off ablation reveals that Random Network Distillation is the proximate cause of, not a remedy for, the hard
-entropy-collapse events ($\geq 3$ documented cases), and (ii) a
+entropy-collapse events ($4$ documented cases across $3$ seeds),
+and (ii) a
 crash-proof distributed pipeline that handled 10 emulator-level
 failures and a cluster-wide kill event without operator
 intervention. Code, training logs, and evaluation JSONs are
@@ -169,8 +170,9 @@ running-mean returns and per-policy offline analysis.
         holds.
   \item \textbf{(C3) A single-seed RND ablation that causally
         attributes the entropy-collapse phenomenon to RND.} Across
-        the 9 RND-on runs we observe at least 3 hard
-        entropy-collapse events (policy entropy $<\!0.05$);
+        the 9 RND-on runs we observe 4 hard
+        entropy-collapse events across 3 seeds (policy entropy
+        $<\!0.05$);
         re-running baseline PPO with \texttt{--use-rnd} disabled on
         one seed produces \emph{zero} such events. Final
         deterministic-evaluation return is unchanged ($-1.67$ in
@@ -626,7 +628,11 @@ for any DRL pipeline that runs on shared hardware.
 \paragraph{Supervised vs self-supervised asymmetry (OCA vs DPR).}
 OCA's regression targets come from a hand-crafted HSV-mask plus
 connected-components detector that provides explicit ball/player
-coordinates and orientations. DPR is fully self-supervised on raw
+coordinates and orientations. The detector is itself imperfect:
+manual spot-checks show it misses $\approx 5$--$10\%$ of frames
+when blobs overlap or the ball is partially occluded, in which
+case we emit a zero target (mild noise injection rather than a
+masked loss). DPR, by contrast, is fully self-supervised on raw
 pixels. The two losses therefore operate under qualitatively
 different information regimes, and any apparent OCA advantage
 could reflect supervised signal access rather than object-centric
@@ -648,7 +654,11 @@ effectively ignored it. The full factorial
 $\{\text{RND on/off}\}\times\{\text{charge-dim on/off}\}\times
 \{\text{baseline, OCA, DPR}\}$ ($n{=}12$ training cells) would
 isolate every component cleanly and remains the most important
-algorithmic follow-up.
+algorithmic follow-up. We also did not sweep the auxiliary-loss
+weight $\lambda_\text{aux}=0.5$; a sweep over
+$\{0.1, 0.25, 0.5, 1.0, 2.0\}$ would test whether any OCA/DPR
+effect at larger budgets is weight-driven, and is a natural
+extension once the factorial ablation is in place.
 
 \paragraph{Wall-clock and sample size.}
 Our largest limitation is wall clock: at \SI{500}{\milli\second}
@@ -695,8 +705,8 @@ augmentation is mechanically delivered but ignored by the actor
 charge range), so the agents converge to memoryless Bernoulli
 policies. To \textbf{(Q3)}---does RND prevent and rescue entropy
 collapse?---we report the opposite of our original hypothesis. We
-observe at least 3 hard collapses in the RND-on runs; a 1-seed
-RND-off ablation produces zero collapses across the full 312
+observe 4 hard collapses across 3 seeds in the RND-on runs; a
+1-seed RND-off ablation produces zero collapses across the full 312
 PPO updates while yielding the same final eval return. RND is
 the proximate cause of, not a remedy for, the collapse phenomenon
 in this regime, but has no net effect on final performance. The cleanest methodological takeaways are (a) that
