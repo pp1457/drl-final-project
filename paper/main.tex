@@ -4,9 +4,9 @@
 % so \cite{key} produces compact numeric citations like [1, 2, 3].
 \PassOptionsToPackage{numbers, compress}{natbib}
 
-% NeurIPS 2026 — Main Track, default option (anonymous, double-blind,
-% line numbers visible). Do NOT add `final` until camera-ready.
-\usepackage{neurips_2026}
+% NeurIPS 2026 — Main Track, camera-ready (`final` reveals authors and
+% turns off line numbers).
+\usepackage[final]{neurips_2026}
 
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
@@ -25,9 +25,15 @@
        for PPO on a Real-Time Android Game}
 
 \author{%
-  Anonymous Authors \\
-  Affiliation withheld for double-blind review \\
-  \texttt{anonymous@example.com} \\
+  Yun-Yang Liao \\ B12902046 \\ National Taiwan University \\ \texttt{b12902046@csie.ntu.edu.tw}
+  \And
+  Cheng-Hsin Tsai \\ B12902140 \\ National Taiwan University \\ \texttt{b12902140@csie.ntu.edu.tw}
+  \And
+  Kai-Hsin Shao \\ B12902117 \\ National Taiwan University \\ \texttt{b12902117@csie.ntu.edu.tw}
+  \And
+  You-Chen Lai \\ B12902052 \\ National Taiwan University \\ \texttt{b12902052@csie.ntu.edu.tw}
+  \And
+  Bo-Yu Chen \\ B12902131 \\ National Taiwan University \\ \texttt{b12902131@csie.ntu.edu.tw}
 }
 
 \begin{document}
@@ -38,7 +44,7 @@ Deep reinforcement learning (DRL) has been studied extensively on
 fast, idealised simulators, but its behaviour on the slow, partially
 non-Markovian regime imposed by real consumer operating systems is
 poorly understood. We take a step toward filling this gap with the
-empirical study of auxiliary-representation losses
+exploratory systems-level empirical study of auxiliary-representation losses
 for on-policy DRL on a real Android emulator. Our domain is the
 physics-based mobile game \emph{Bouncy Basketball}, accessed through
 the stock Android Debug Bridge at an effective interaction rate of
@@ -661,7 +667,7 @@ we bundled together here.
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented a systematic empirical study of representation-learning
+We presented an exploratory systems-level empirical study of representation-learning
 auxiliary losses for on-policy DRL on a real Android emulator. To
 \textbf{(Q1)}---do auxiliary losses help PPO at $\sim$\SI{2}{\hertz}
 on Android?---we report a negative answer: at our $80\,000$-step
