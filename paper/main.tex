@@ -56,10 +56,10 @@ with shared NatureCNN encoder. Our principal empirical finding is a
 representation-learning conditions (no aux / object-centric pose
 regression / dense pixel reconstruction) learns a policy that beats
 the deterministic in-game CPU opponent. Per-seed final
-training-time returns cluster tightly around $-19$ (HOU loses by
-$\approx 19$ baskets per $4$-quarter game), with per-condition
-means within $0.41$ reward of each other and inter-seed std
-$0.5$--$0.7$. Deterministic evaluation against a measured
+training-time returns cluster tightly around $-19$ (the agent's
+team loses by $\approx 19$ baskets per $4$-quarter game), with
+per-condition means within $0.41$ reward of each other and
+inter-seed std $0.5$--$0.7$. Deterministic evaluation against a measured
 uniform-random baseline ($n=10$ episodes, mean $-1.60$) shows
 trained-condition means $0.2$--$0.9$ reward above the random
 floor, but at our sample size none of the trained-vs-random
@@ -167,12 +167,15 @@ running-mean returns and per-policy offline analysis.
         Bernoulli policies and cannot intentionally control press
         duration, even though the backend supports arbitrary-length
         holds.
-  \item \textbf{(C3) A documented case study of RND-rescued entropy
-        collapse} on a charge-release action space. Across the 9
-        runs we observe at least 3 hard entropy-collapse events
-        (policy entropy $<\!0.05$); in every case the RND
-        intrinsic bonus restored entropy to functional levels and
-        the policy resumed improvement.
+  \item \textbf{(C3) A single-seed RND ablation that causally
+        attributes the entropy-collapse phenomenon to RND.} Across
+        the 9 RND-on runs we observe at least 3 hard
+        entropy-collapse events (policy entropy $<\!0.05$);
+        re-running baseline PPO with \texttt{--use-rnd} disabled on
+        one seed produces \emph{zero} such events. Final
+        deterministic-evaluation return is unchanged ($-1.67$ in
+        both conditions), so RND drives the collapses we documented
+        but does not change final policy quality at our budget.
   \item \textbf{(C4) A reproducible distributed training pipeline}
         with an interrupt-safe \texttt{EXIT/INT/TERM} trap that
         rsyncs the most recent checkpoint to NFS on any termination;
@@ -209,8 +212,10 @@ inform our analysis.
 \subsection{Environment and MDP formulation}
 \label{sec:env}
 
-Bouncy Basketball is a 2D physics game in which the user team (HOU)
-plays a fixed computer-controlled opponent (CHI) for four
+Bouncy Basketball is a 2D physics game whose default match pits two
+NBA-themed teams (in our configuration, Houston / ``HOU'' for the
+agent's side and Chicago / ``CHI'' for the opponent) against each
+other for four
 fixed-timer quarters. The \textbf{state} is a stack of the last
 $4$ $84\times84$ grayscale frames captured by \texttt{adb exec-out
 screencap}. The \textbf{action} space is
@@ -689,9 +694,12 @@ augmentation is mechanically delivered but ignored by the actor
 ($P(\textsc{press})$ varies by $<\!0.01$ across the entire
 charge range), so the agents converge to memoryless Bernoulli
 policies. To \textbf{(Q3)}---does RND prevent and rescue entropy
-collapse?---we observe at least 3 documented hard collapses
-(policy entropy $<\!0.05$), all rescued by the RND intrinsic
-bonus. The cleanest methodological takeaways are (a) that
+collapse?---we report the opposite of our original hypothesis. We
+observe at least 3 hard collapses in the RND-on runs; a 1-seed
+RND-off ablation produces zero collapses across the full 312
+PPO updates while yielding the same final eval return. RND is
+the proximate cause of, not a remedy for, the collapse phenomenon
+in this regime, but has no net effect on final performance. The cleanest methodological takeaways are (a) that
 concatenating a state-relevant scalar to the encoder output is
 not by itself sufficient for PPO to use it---stronger supervisory
 signals or longer budgets appear necessary---and (b) that the
