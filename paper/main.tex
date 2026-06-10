@@ -52,7 +52,9 @@ roughly \SI{2}{\hertz} (versus \SI{60}{\hertz} for the underlying
 game). Within this regime we run a controlled 3$\times$3 factorial
 study (3 auxiliary conditions $\times$ 3 random seeds) of a PPO agent
 with shared NatureCNN encoder. Our principal empirical finding is a
-\emph{negative} one: at our $80\,000$-step budget, none of the three
+\emph{negative} one: at our planned $80\,000$-step budget (with most
+seeds stopped earlier at the visible plateau; see \S\ref{sec:perseed}),
+none of the three
 representation-learning conditions (no aux / object-centric pose
 regression / dense pixel reconstruction) learns a policy that beats
 the deterministic in-game CPU opponent. Per-seed final
@@ -78,7 +80,7 @@ do stand out: (i) a single-seed RND-off ablation that is
 proximate cause of, rather than a remedy for, the hard
 entropy-collapse events we observed ($4$ documented cases across
 $3$ of $9$ RND-on seeds vs $0$ in the single RND-off run, Fisher
-exact $p \approx 0.67$ at this sample size), and (ii) a
+exact $p \approx 0.70$ at this sample size), and (ii) a
 crash-proof distributed pipeline that handled 10 emulator-level
 failures and a cluster-wide kill event without operator
 intervention. Code, training logs, and evaluation JSONs are
@@ -159,7 +161,7 @@ running-mean returns and per-policy offline analysis.
         no-aux, $K{=}4$-step-ahead object-centric pose regression
         (OCA) and dense next-frame pixel reconstruction (DPR) on a
         common PPO backbone and report \emph{negative} headline
-        evidence: at our $80\,000$-step budget, all three
+        evidence: at our planned $80\,000$-step budget, all three
         conditions plateau at $-19.5 \pm 0.7$ reward (random-play
         level), with per-condition mean differences ($<\!0.5$)
         smaller than inter-seed std ($0.5$--$0.7$).
@@ -179,7 +181,7 @@ running-mean returns and per-policy offline analysis.
         disabled on one seed produces \emph{zero} such events. A
         Fisher exact test on this $3$-of-$9$ vs $0$-of-$1$
         contingency does not reach significance
-        ($p \approx 0.67$), so we report this as observational
+        ($p \approx 0.70$), so we report this as observational
         evidence consistent with RND driving the collapses we
         documented rather than a confirmed causal claim. Final
         deterministic-evaluation return is unchanged ($-1.67$ in
@@ -209,7 +211,9 @@ provides a strong spatial-dynamics prior. \textbf{Intrinsic
 motivation} via curiosity \cite{pathak2017curiosity} and Random
 Network Distillation \cite{burda2018rnd} encourages exploration of
 representationally novel states; RND's non-collapsing intrinsic
-bonus is the property we exploit for entropy-collapse recovery.
+bonus is the property that motivated our use of it here, though
+our single-seed ablation in \S\ref{sec:rnd-finding} reports the
+opposite of the expected effect.
 \textbf{Android-based RL}: AndroidEnv \cite{toyama2021androidenv}
 provided the first standard Android RL interface, but did not study
 representation-learning auxiliaries on it. The dynamics of
@@ -519,18 +523,21 @@ the right moment, not by intentional timing.
 \label{sec:rnd-finding}
 
 A distinctive qualitative observation of the run is that PPO
-combined with our charge-duration concatenation is prone to
-\emph{hard} entropy collapse---policy entropy drops below
-$0.05$---and that recovery was observed when RND was active.
-Table~\ref{tab:collapse} summarises the documented cases.
+combined with our charge-duration concatenation and RND is prone
+to \emph{hard} entropy collapse---policy entropy drops below
+$0.05$---with subsequent recovery in every documented case.
+Table~\ref{tab:collapse} summarises the events; the RND-off
+ablation below reverses our initial reading of the cause.
 
 \begin{table}[h]
   \caption{Documented hard entropy-collapse events (policy entropy
-  $<\!0.05$) in RND-on runs and subsequent recovery. Lowest-entropy
-  values are recomputed from the full within-update entropy traces
-  of our final training run; submission-time values reported the
-  per-update sample minimum, which under-sampled the true
-  within-update minimum. An ablation with \texttt{--use-rnd}
+  $<\!0.05$) in RND-on runs and subsequent recovery. The events
+  are drawn from the final training run reported in
+  Table~\ref{tab:perseed}; lowest-entropy values use the full
+  within-update entropy trace rather than the per-update sample
+  minimum, so individual values can be lower than the submission's
+  numbers and the listed seed set differs from a preliminary run
+  reported in the submission. An ablation with \texttt{--use-rnd}
   disabled (1 seed, full 312 updates) produced \emph{zero} such
   events; we discuss the causal status of this comparison below.}
   \label{tab:collapse}
@@ -567,7 +574,7 @@ collapse--recovery phenomenon: it appears that RND, rather than
 rescuing hard entropy collapses, is most plausibly their
 proximate cause in this setup. We emphasise the limited statistical
 power of a $3$-of-$9$ vs $0$-of-$1$ contingency (Fisher exact
-$p \approx 0.67$); the result is consistent with --- but does not
+$p \approx 0.70$); the result is consistent with --- but does not
 formally establish --- a causal role for RND. The
 mechanism is most naturally explained by RND's intrinsic-bonus
 gradient driving the policy toward narrow regions of action space
@@ -685,7 +692,7 @@ use both \texttt{--use-rnd} and \texttt{--use-charge-dim}. We
 report a single-seed RND-off ablation in
 \S\ref{sec:rnd-finding} that is suggestive --- though not
 formally significant at this sample size (Fisher exact
-$p \approx 0.67$) --- of RND being the proximate cause of the
+$p \approx 0.70$) --- of RND being the proximate cause of the
 collapses we documented, with no net effect on final eval
 performance. The charge-duration scalar is
 addressed by the offline P(press) analysis of
@@ -708,10 +715,16 @@ seeds did not reach the full $80\,000$-step ($312$-update)
 budget before training was stopped at the visible plateau (final
 updates $173$--$224$; see Table~\ref{tab:perseed}), whereas the
 RND-off ablation seed ran the full $312$ updates. The RND-off vs
-RND-on comparison in \S\ref{sec:rnd-finding} is therefore mildly
-budget-mismatched (in RND-off's favour for the collapse count),
-which further reinforces our reluctance to draw a formal causal
-conclusion from the contingency. The per-step budget itself is a system
+RND-on comparison in \S\ref{sec:rnd-finding} is therefore
+budget-mismatched in a direction that is \emph{conservative} for
+our observation: the RND-off seed had more exposure in which a
+hard collapse could have occurred (and all four RND-on collapses
+happened by update $111$, well before the RND-on seeds were
+stopped), so observing zero collapses over the longer run, if
+anything, strengthens the directional evidence rather than
+weakening it. We nevertheless retain the Fisher exact
+$p \approx 0.70$ caveat: the $3$-of-$9$ vs $0$-of-$1$ seed-level
+contingency is the binding statistical limitation. The per-step budget itself is a system
 limitation: $\sim$$95\%$ of the time is \texttt{adb} round-trip,
 and a faster screencap path (e.g.\ \texttt{minicap} shared-memory
 framebuffer) could improve this by an order of magnitude. The
@@ -733,7 +746,7 @@ we bundled together here.
 We presented an exploratory systems-level empirical study of representation-learning
 auxiliary losses for on-policy DRL on a real Android emulator. To
 \textbf{(Q1)}---do auxiliary losses help PPO at $\sim$\SI{2}{\hertz}
-on Android?---we report a negative answer: at our $80\,000$-step
+on Android?---we report a negative answer: at our planned $80\,000$-step
 budget, no condition (no-aux / OCA / DPR) beats the deterministic
 in-game CPU opponent. Deterministic eval (Table~\ref{tab:eval})
 shows trained-condition means numerically above the measured
@@ -759,7 +772,7 @@ PPO updates while yielding the same final eval return. This is
 consistent with RND being the proximate cause of, rather than a
 remedy for, the collapse phenomenon in this regime, though the
 $3$-of-$9$ vs $0$-of-$1$ comparison does not reach statistical
-significance (Fisher exact $p \approx 0.67$) and we do not claim
+significance (Fisher exact $p \approx 0.70$) and we do not claim
 formal causal attribution. The cleanest methodological takeaways
 are (a) that
 concatenating a state-relevant scalar to the encoder output is
@@ -928,11 +941,13 @@ checkpoints used in this paper are released at
 Training-launcher invocation per run:
 
 \smallskip
-\noindent\texttt{python -u train.py --env-id bouncy \textbackslash} \\
-\texttt{\quad --aux-mode \{baseline,oca,dpr\} --seed \{0,1,2\} \textbackslash} \\
-\texttt{\quad --total-timesteps 80000 --num-envs 2 --num-steps 128 \textbackslash} \\
-\texttt{\quad --num-minibatches 4 --update-epochs 4 --ckpt-every 25 \textbackslash} \\
-\texttt{\quad --backend adb-motionevent --frame-skip 1 \textbackslash} \\
-\texttt{\quad --use-rnd --use-charge-dim}
+\begin{verbatim}
+python -u train.py --env-id bouncy \
+    --aux-mode {baseline,oca,dpr} --seed {0,1,2} \
+    --total-timesteps 80000 --num-envs 2 --num-steps 128 \
+    --num-minibatches 4 --update-epochs 4 --ckpt-every 25 \
+    --backend adb-motionevent --frame-skip 1 \
+    --use-rnd --use-charge-dim
+\end{verbatim}
 
 \end{document}
