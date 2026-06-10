@@ -461,15 +461,9 @@ opposite of what one would predict from the auxiliary-loss
 literature on fast simulators. Neither auxiliary loss provides a
 detectable benefit in our setting.
 
-\textbf{(iii) Pathological per-seed behaviour is visible.}
-\texttt{ws5\_oca\_s1} produced three identical $0$-score
-episodes: a degenerate policy that essentially never presses
-(consistent with its $P(\textsc{press})=0.42$ becoming
-$\arg\max=\textsc{no-press}$ for every observation in the
-deterministic regime). \texttt{ws4\_oca\_s0} took the opposite
-degenerate path: a single $-4$ blowout pulled its mean down.
-\texttt{ws8\_dpr\_s1} produced the only positive single-episode
-return ($+1$), and \texttt{ws10\_dpr\_s2} produced a $+2$.
+Pathological per-seed behaviour (degenerate never-press or
+always-press regimes, occasional positive single-episode returns)
+is visible in the raw per-episode data; see Appendix~\ref{app:eval-raw}.
 
 \subsection{The actor ignores the charge-duration augmentation}
 \label{sec:charge-ignored}
@@ -569,63 +563,47 @@ $\{-4,-2,+1\}$), \emph{identical} to the corresponding RND-on
 baseline seed (ws1, mean $-1.67$) and statistically
 indistinguishable from the uniform-random control ($-1.60$).
 
-This is suggestive evidence against our original framing of the
-collapse--recovery phenomenon: it appears that RND, rather than
-rescuing hard entropy collapses, is most plausibly their
-proximate cause in this setup. We emphasise the limited statistical
-power of a $3$-of-$9$ vs $0$-of-$1$ contingency (Fisher exact
-$p \approx 0.70$); the result is consistent with --- but does not
-formally establish --- a causal role for RND. The
-mechanism is most naturally explained by RND's intrinsic-bonus
-gradient driving the policy toward narrow regions of action space
-that achieve high RND prediction error; once concentrated, the
-policy commits, entropy drops, and the same RND signal then
-incentivises moving away from the converged region, raising
-entropy again. The net effect on final policy quality, however,
-is \emph{zero}: the RND-off ablation and the RND-on baseline
-arrive at the same eval mean.
+This is suggestive evidence against our original framing: RND
+appears to be the proximate cause of hard entropy collapse in
+this setup rather than its remedy, though the $3$-of-$9$ vs
+$0$-of-$1$ contingency (Fisher exact $p \approx 0.70$) does not
+formally establish causation. A plausible mechanism is that the
+intrinsic-bonus gradient first concentrates the policy on
+high-prediction-error actions and then pushes it away once that
+region is reached, producing the collapse--recovery cycle. The
+net effect on final policy quality is \emph{zero}: RND-on and
+RND-off arrive at the same eval mean.
 
 \subsection{System stability}
 \label{sec:stability}
 
-Across the training run our pipeline absorbed 10 emulator-level
-recoverable failures across all 9 seeds: \texttt{adb} screencap
-timeouts, blank-frame watchdog trips (emulator screen frozen for
-$180$ consecutive steps), and menu-stuck \texttt{env.reset()}
-failures. Each was caught by the per-worker
-\texttt{\_recover\_envs} routine, which kills the affected
-emulator, relaunches it from the same QEMU snapshot, and resumes
-the training loop with the same PPO state; no operator
-intervention was required. A cluster-wide administrative event
-late in the run terminated all 9 worker processes within a $\sim$
-$10$-min window; the \texttt{EXIT/INT/TERM} trap mirrored each
-worker's most recent checkpoint to NFS before exit so all 9 final
-checkpoints were preserved.
+Across the training run our pipeline absorbed 10 recoverable
+emulator-level failures across all 9 seeds (\texttt{adb}
+screencap timeouts, blank-frame watchdog trips, and menu-stuck
+resets), each caught by the per-worker recovery routine that
+relaunches the emulator from its QEMU snapshot and resumes the
+training loop with the same PPO state. A cluster-wide
+administrative event late in the run terminated all 9 worker
+processes within a $\sim$$10$-min window; the
+\texttt{EXIT/INT/TERM} trap mirrored each worker's most recent
+checkpoint to NFS before exit, preserving all 9 final
+checkpoints.
 
 \section{Discussion}
 \label{sec:discussion}
 
 \paragraph{Reconciling $-19$ training returns with $-1$ eval
-returns.} Training-time returns in Table~\ref{tab:perseed} cluster
-near $-19$, while deterministic per-quarter eval returns in
-Table~\ref{tab:eval} cluster near $-1$. Two factors account for
-the gap. (i) \emph{Horizon}: training returns accumulate over a
-full $4$-quarter game ($\sim$$256$--$1024$ steps), while eval
-returns are capped at one $96$-step quarter, so a per-quarter
-score difference of $\sim$$-4$ to $-5$ (consistent with the
-random-policy mean of $-1.60$ per quarter $\times 4 = -6.4$ per
-game; the rest comes from CHI's deterministic CPU consistently
-out-scoring near-random HOU play) extends to roughly $-19$ over
-a full game. (ii) \emph{Stochastic vs deterministic policy}:
-training rolls out the stochastic actor, while eval takes
-$\arg\max$ over actor logits. For a near-Bernoulli policy
-(\S\ref{sec:charge-ignored}), $\arg\max$ truncates exploration
-in a way that can either accidentally help (when the modal action
-matches an effective strategy) or hurt (when it locks in the
-degenerate ``never press'' or ``always press'' regime visible in
-Table~\ref{tab:eval}'s pathological seeds). The two regimes are
-therefore not directly comparable, and neither contradicts the
-other.
+returns.} Two factors account for the apparent gap between
+training (full-game, $\sim$$-19$) and eval (per-quarter,
+$\sim$$-1$). \emph{Horizon}: a per-quarter difference of
+$\sim$$-5$ extends to $\sim$$-19$ over four quarters, which is
+consistent with the measured random-policy floor ($-1.60$/quarter)
+plus the CHI CPU's consistent over-scoring against near-random
+play. \emph{Stochastic vs deterministic policy}: training rolls
+out the stochastic actor, while eval takes $\arg\max$, which for
+a near-Bernoulli policy (\S\ref{sec:charge-ignored}) can either
+accidentally help or lock in a degenerate never-press / always-press
+regime. The two regimes are not directly comparable.
 
 \paragraph{Why no condition learns.} The most likely explanation
 is the budget: $80\,000$ environment steps is $\sim$$315$ full
@@ -650,23 +628,11 @@ gating layer that explicitly weights $c_t$, or an auxiliary
 supervised loss that predicts ``shot succeeded'' from $c_t$) would
 likely fix this; we leave such ablations to future work.
 
-\paragraph{Why DPR doesn't actively hurt.} A common worry with
-pixel-reconstruction auxiliaries \cite{lyle2022what} is that they
-allocate encoder capacity to reconstructing background details
-irrelevant to control, distorting features away from the
-action-relevant manifold. Our data is consistent with that worry
-not biting at this budget---DPR is no worse than baseline---
-because the dominant failure mode is simply that no condition
-learns at all. We expect DPR to under-perform OCA at much larger
-budgets; we cannot test that here.
-
-\paragraph{Engineering takeaways.} The crash-proof recovery
-protocol was load-bearing: 10 spontaneous emulator failures
-would have made manual oversight impractical, and the
-cluster-wide kill event would have destroyed several seeds of
-training had the cleanup trap not mirrored checkpoints at exit.
-The per-update mirror plus \texttt{EXIT} trap is a reusable design
-for any DRL pipeline that runs on shared hardware.
+\paragraph{Why DPR doesn't actively hurt.} The usual concern with
+pixel-reconstruction auxiliaries \cite{lyle2022what}---that they
+allocate encoder capacity to control-irrelevant background---is
+consistent with our data not biting at this budget, since the
+dominant failure mode is simply that no condition learns.
 
 \section{Limitations and Future Work}
 \label{sec:limitations}
@@ -714,17 +680,13 @@ only 3 seeds per condition. We note that most of the 9 RND-on
 seeds did not reach the full $80\,000$-step ($312$-update)
 budget before training was stopped at the visible plateau (final
 updates $173$--$224$; see Table~\ref{tab:perseed}), whereas the
-RND-off ablation seed ran the full $312$ updates. The RND-off vs
-RND-on comparison in \S\ref{sec:rnd-finding} is therefore
-budget-mismatched in a direction that is \emph{conservative} for
-our observation: the RND-off seed had more exposure in which a
-hard collapse could have occurred (and all four RND-on collapses
-happened by update $111$, well before the RND-on seeds were
-stopped), so observing zero collapses over the longer run, if
-anything, strengthens the directional evidence rather than
-weakening it. We nevertheless retain the Fisher exact
-$p \approx 0.70$ caveat: the $3$-of-$9$ vs $0$-of-$1$ seed-level
-contingency is the binding statistical limitation. The per-step budget itself is a system
+RND-off ablation seed ran the full $312$ updates. Since all four
+RND-on collapses occurred by update $111$, the longer RND-off run
+provided strictly \emph{more} exposure for a collapse to occur,
+so observing zero is conservative for our directional reading
+rather than weakening it; the binding limitation remains the
+$3$-of-$9$ vs $0$-of-$1$ contingency (Fisher exact
+$p \approx 0.70$). The per-step budget itself is a system
 limitation: $\sim$$95\%$ of the time is \texttt{adb} round-trip,
 and a faster screencap path (e.g.\ \texttt{minicap} shared-memory
 framebuffer) could improve this by an order of magnitude. The
@@ -765,22 +727,17 @@ augmentation is mechanically delivered but ignored by the actor
 ($P(\textsc{press})$ varies by $<\!0.01$ across the entire
 charge range), so the agents converge to memoryless Bernoulli
 policies. To \textbf{(Q3)}---does RND prevent and rescue entropy
-collapse?---we report the opposite of our original hypothesis. We
-observe 4 hard collapses across 3 seeds in the RND-on runs; a
-1-seed RND-off ablation produces zero collapses across the full 312
-PPO updates while yielding the same final eval return. This is
-consistent with RND being the proximate cause of, rather than a
-remedy for, the collapse phenomenon in this regime, though the
-$3$-of-$9$ vs $0$-of-$1$ comparison does not reach statistical
-significance (Fisher exact $p \approx 0.70$) and we do not claim
-formal causal attribution. The cleanest methodological takeaways
-are (a) that
-concatenating a state-relevant scalar to the encoder output is
-not by itself sufficient for PPO to use it---stronger supervisory
-signals or longer budgets appear necessary---and (b) that the
-crash-proof distributed training protocol described here handled
-all $10$ emulator-level failures and a cluster-wide kill event
-without manual intervention.
+collapse?---we report the opposite of our original hypothesis.
+A 1-seed RND-off ablation produces zero collapses across the
+full 312 PPO updates while yielding the same final eval return,
+consistent with (though not formally establishing,
+$p \approx 0.70$) RND being the proximate cause of rather than a
+remedy for the collapse phenomenon. The cleanest methodological
+takeaways are (a) that concatenating a state-relevant scalar to
+the encoder output is not by itself sufficient for PPO to use
+it, and (b) that the crash-proof distributed training protocol
+handled all emulator-level failures and a cluster-wide kill
+event without manual intervention.
 
 \section*{Member Workload}
 \label{sec:workload}
