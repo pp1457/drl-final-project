@@ -40,51 +40,42 @@
 \maketitle
 
 \begin{abstract}
-Deep reinforcement learning (DRL) has been studied extensively on
-fast, idealised simulators, but its behaviour on the slow, partially
-non-Markovian regime imposed by real consumer operating systems is
-poorly understood. We take a step toward filling this gap with an
-exploratory systems-level empirical study of auxiliary-representation losses
-for on-policy DRL on a real Android emulator. Our domain is the
-physics-based mobile game \emph{Bouncy Basketball}, accessed through
-the stock Android Debug Bridge at an effective interaction rate of
-roughly \SI{2}{\hertz} (versus \SI{60}{\hertz} for the underlying
-game). Within this regime we run a controlled 3$\times$3 factorial
-study (3 auxiliary conditions $\times$ 3 random seeds) of a PPO agent
-with shared NatureCNN encoder. Our principal empirical finding is a
-\emph{negative} one: at our planned $80\,000$-step budget (with most
-seeds stopped earlier at the visible plateau; see \S\ref{sec:perseed}),
-none of the three
+Deep reinforcement learning (DRL) is studied mostly on fast,
+idealised simulators; its behaviour on the slow, partially
+non-Markovian regime imposed by real consumer operating systems
+is poorly understood. We present an exploratory systems-level
+empirical study of auxiliary-representation losses for on-policy
+DRL on a real Android emulator, using the physics-based mobile
+game \emph{Bouncy Basketball} accessed through the Android Debug
+Bridge at $\sim$\SI{2}{\hertz} (versus \SI{60}{\hertz} for the
+underlying game). Within this regime we run a controlled
+$3\times3$ factorial study (3 auxiliary conditions $\times$ 3
+random seeds) of a PPO agent with a shared NatureCNN encoder.
+Our principal empirical finding is \emph{negative}: at our
+planned $80\,000$-step budget, none of the three
 representation-learning conditions (no aux / object-centric pose
-regression / dense pixel reconstruction) learns a policy that beats
-the deterministic in-game CPU opponent. Per-seed final
-training-time returns cluster tightly around $-19$ (the agent's
-team loses by $\approx 19$ baskets per $4$-quarter game), with
-per-condition means within $0.41$ reward of each other and
-inter-seed std $0.5$--$0.7$. Deterministic evaluation against a measured
-uniform-random baseline ($n=10$ episodes, mean $-1.60$) shows
-trained-condition means $0.2$--$0.9$ reward above the random
-floor, but at our sample size none of the trained-vs-random
-gaps reach statistical significance (Welch $t$-test
-$p \geq 0.15$, one-sided Mann--Whitney $p \geq 0.076$). The
-auxiliary-loss conditions do not improve on the no-aux baseline
-either ($p \geq 0.23$ for both comparisons). We additionally analyse the trained
-policies offline and find that the actor head has effectively
-\emph{ignored} the charge-duration scalar we added to the
-observation: $P(\textsc{press})$ varies by less than $0.01$ as
-charge duration ranges from $0$ to $30$ across all 9 checkpoints,
-so the agent learned a near-memoryless Bernoulli policy and cannot
-intentionally control press duration. Two methodological findings
-do stand out: (i) a single-seed RND-off ablation that is
-\emph{consistent with} Random Network Distillation being the
-proximate cause of, rather than a remedy for, the hard
-entropy-collapse events we observed ($4$ documented cases across
-$3$ of $9$ RND-on seeds vs $0$ in the single RND-off run, Fisher
-exact $p \approx 0.70$ at this sample size), and (ii) a
-crash-proof distributed pipeline that handled 10 emulator-level
-failures and a cluster-wide kill event without operator
-intervention. Code, training logs, and evaluation JSONs are
-available at \url{https://github.com/pp1457/drl-final-project}.
+regression / dense pixel reconstruction) learns a policy that
+beats the deterministic in-game CPU opponent. Training-time
+returns cluster around $-19$ (losing by $\approx 19$ baskets per
+game) with per-condition means within $0.41$ reward of each
+other; deterministic evaluation against a measured uniform-random
+baseline ($n=10$, mean $-1.60$) does not reach significance for
+any trained-vs-random comparison (Welch $p \geq 0.15$,
+Mann--Whitney $p \geq 0.076$), nor do the auxiliary-loss
+conditions beat the no-aux baseline ($p \geq 0.23$). Offline
+analysis shows the actor effectively \emph{ignores} the
+charge-duration scalar we added to the observation
+($P(\textsc{press})$ varies by $<\!0.01$ across the entire charge
+range), and the agents converge to memoryless Bernoulli policies.
+Two methodological findings stand out: a single-seed RND-off
+ablation \emph{consistent with} Random Network Distillation being
+the proximate cause of, rather than a remedy for, the hard
+entropy-collapse events we observed ($4$ cases across $3$ of $9$
+RND-on seeds vs $0$ in the RND-off run, Fisher exact
+$p \approx 0.70$); and a crash-proof distributed pipeline that
+handled 10 emulator-level failures and a cluster-wide kill event
+without operator intervention. Code, logs, and eval JSONs:
+\url{https://github.com/pp1457/drl-final-project}.
 \end{abstract}
 
 \section{Introduction}
