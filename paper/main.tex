@@ -64,7 +64,7 @@ uniform-random baseline ($n=10$ episodes, mean $-1.60$) shows
 trained-condition means $0.2$--$0.9$ reward above the random
 floor, but at our sample size none of the trained-vs-random
 gaps reach statistical significance (Welch $t$-test
-$p \geq 0.15$, one-sided Mann--Whitney $p \geq 0.08$). The
+$p \geq 0.15$, one-sided Mann--Whitney $p \geq 0.076$). The
 auxiliary-loss conditions do not improve on the no-aux baseline
 either ($p \geq 0.23$ for both comparisons). We additionally analyse the trained
 policies offline and find that the actor head has effectively
@@ -73,9 +73,12 @@ observation: $P(\textsc{press})$ varies by less than $0.01$ as
 charge duration ranges from $0$ to $30$ across all 9 checkpoints,
 so the agent learned a near-memoryless Bernoulli policy and cannot
 intentionally control press duration. Two methodological findings
-do stand out: (i) An RND-off ablation reveals that Random Network Distillation is the proximate cause of, not a remedy for, the hard
-entropy-collapse events ($4$ documented cases across $3$ seeds),
-and (ii) a
+do stand out: (i) a single-seed RND-off ablation that is
+\emph{consistent with} Random Network Distillation being the
+proximate cause of, rather than a remedy for, the hard
+entropy-collapse events we observed ($4$ documented cases across
+$3$ of $9$ RND-on seeds vs $0$ in the single RND-off run, Fisher
+exact $p \approx 0.67$ at this sample size), and (ii) a
 crash-proof distributed pipeline that handled 10 emulator-level
 failures and a cluster-wide kill event without operator
 intervention. Code, training logs, and evaluation JSONs are
@@ -168,16 +171,21 @@ running-mean returns and per-policy offline analysis.
         Bernoulli policies and cannot intentionally control press
         duration, even though the backend supports arbitrary-length
         holds.
-  \item \textbf{(C3) A single-seed RND ablation that causally
-        attributes the entropy-collapse phenomenon to RND.} Across
-        the 9 RND-on runs we observe 4 hard
+  \item \textbf{(C3) A single-seed RND ablation suggestive of
+        RND as the proximate cause of the entropy-collapse
+        phenomenon.} Across the 9 RND-on runs we observe 4 hard
         entropy-collapse events across 3 seeds (policy entropy
-        $<\!0.05$);
-        re-running baseline PPO with \texttt{--use-rnd} disabled on
-        one seed produces \emph{zero} such events. Final
+        $<\!0.05$); re-running baseline PPO with \texttt{--use-rnd}
+        disabled on one seed produces \emph{zero} such events. A
+        Fisher exact test on this $3$-of-$9$ vs $0$-of-$1$
+        contingency does not reach significance
+        ($p \approx 0.67$), so we report this as observational
+        evidence consistent with RND driving the collapses we
+        documented rather than a confirmed causal claim. Final
         deterministic-evaluation return is unchanged ($-1.67$ in
-        both conditions), so RND drives the collapses we documented
-        but does not change final policy quality at our budget.
+        both conditions), so to the extent RND influences the
+        collapses, it does not change final policy quality at our
+        budget.
   \item \textbf{(C4) A reproducible distributed training pipeline}
         with an interrupt-safe \texttt{EXIT/INT/TERM} trap that
         rsyncs the most recent checkpoint to NFS on any termination;
@@ -272,7 +280,10 @@ where $(b_x,b_y)$ are normalised ball coordinates,
 $(t^c, o^c)$ are HOU/CHI player centroids, and
 $(\sin\theta, \cos\theta)$ are blob principal-axis orientations.
 Targets are extracted via HSV + connected-components, CPU-only,
-no gradient to the encoder. Loss weight
+no gradient to the encoder. The detector misses
+$\approx 5$--$10\%$ of frames when blobs overlap or the ball is
+occluded; on miss we emit a zero target rather than masking the
+loss (see \S\ref{sec:limitations} for discussion). Loss weight
 $\lambda_\text{aux}=0.5$.
 
 \textbf{Dense Pixel Reconstruction (DPR).} A transposed-convolution
@@ -438,8 +449,8 @@ policy difference) in \S\ref{sec:discussion}.
 \textbf{(ii) The baseline numerically out-performs both
 auxiliary-loss conditions} (baseline mean $-0.67$ vs OCA $-1.44$
 vs DPR $-0.89$). The per-condition gap baseline$\to$OCA is
-$0.78$, slightly larger than the inter-seed std within each
-condition ($0.85$, $1.35$, $0.51$); under any reasonable
+$0.78$, comparable to or smaller than the inter-seed std within
+each condition ($0.85$, $1.35$, $0.51$); under any reasonable
 significance test on $n=9$ episodes per condition the gap is at
 most borderline-significant, but the \emph{direction} is the
 opposite of what one would predict from the auxiliary-loss
@@ -515,10 +526,13 @@ Table~\ref{tab:collapse} summarises the documented cases.
 
 \begin{table}[h]
   \caption{Documented hard entropy-collapse events (policy entropy
-  $<\!0.05$) in RND-on runs and subsequent recovery. An ablation
-  with \texttt{--use-rnd} disabled (1 seed, full 312 updates)
-  produced \emph{zero} such events, confirming RND as the
-  proximate cause.}
+  $<\!0.05$) in RND-on runs and subsequent recovery. Lowest-entropy
+  values are recomputed from the full within-update entropy traces
+  of our final training run; submission-time values reported the
+  per-update sample minimum, which under-sampled the true
+  within-update minimum. An ablation with \texttt{--use-rnd}
+  disabled (1 seed, full 312 updates) produced \emph{zero} such
+  events; we discuss the causal status of this comparison below.}
   \label{tab:collapse}
   \centering
   \small
@@ -548,10 +562,13 @@ $\{-4,-2,+1\}$), \emph{identical} to the corresponding RND-on
 baseline seed (ws1, mean $-1.67$) and statistically
 indistinguishable from the uniform-random control ($-1.60$).
 
-This causally inverts our original framing of the
-collapse--recovery phenomenon. RND does not \emph{rescue} hard
-entropy collapses; rather, \textbf{RND is the proximate cause of
-them}. Without RND, the policy simply does not collapse. The
+This is suggestive evidence against our original framing of the
+collapse--recovery phenomenon: it appears that RND, rather than
+rescuing hard entropy collapses, is most plausibly their
+proximate cause in this setup. We emphasise the limited statistical
+power of a $3$-of-$9$ vs $0$-of-$1$ contingency (Fisher exact
+$p \approx 0.67$); the result is consistent with --- but does not
+formally establish --- a causal role for RND. The
 mechanism is most naturally explained by RND's intrinsic-bonus
 gradient driving the policy toward narrow regions of action space
 that achieve high RND prediction error; once concentrated, the
@@ -580,6 +597,28 @@ checkpoints were preserved.
 
 \section{Discussion}
 \label{sec:discussion}
+
+\paragraph{Reconciling $-19$ training returns with $-1$ eval
+returns.} Training-time returns in Table~\ref{tab:perseed} cluster
+near $-19$, while deterministic per-quarter eval returns in
+Table~\ref{tab:eval} cluster near $-1$. Two factors account for
+the gap. (i) \emph{Horizon}: training returns accumulate over a
+full $4$-quarter game ($\sim$$256$--$1024$ steps), while eval
+returns are capped at one $96$-step quarter, so a per-quarter
+score difference of $\sim$$-4$ to $-5$ (consistent with the
+random-policy mean of $-1.60$ per quarter $\times 4 = -6.4$ per
+game; the rest comes from CHI's deterministic CPU consistently
+out-scoring near-random HOU play) extends to roughly $-19$ over
+a full game. (ii) \emph{Stochastic vs deterministic policy}:
+training rolls out the stochastic actor, while eval takes
+$\arg\max$ over actor logits. For a near-Bernoulli policy
+(\S\ref{sec:charge-ignored}), $\arg\max$ truncates exploration
+in a way that can either accidentally help (when the modal action
+matches an effective strategy) or hurt (when it locks in the
+degenerate ``never press'' or ``always press'' regime visible in
+Table~\ref{tab:eval}'s pathological seeds). The two regimes are
+therefore not directly comparable, and neither contradicts the
+other.
 
 \paragraph{Why no condition learns.} The most likely explanation
 is the budget: $80\,000$ environment steps is $\sim$$315$ full
@@ -644,10 +683,11 @@ primary algorithmic follow-up we plan.
 \paragraph{Partial ablation of bundled flags.} All $9$ main runs
 use both \texttt{--use-rnd} and \texttt{--use-charge-dim}. We
 report a single-seed RND-off ablation in
-\S\ref{sec:rnd-finding} that isolates RND's effect on entropy
-collapses: the corresponding factorial cell shows RND is the
-proximate cause of the collapses we documented, with no net
-effect on final eval performance. The charge-duration scalar is
+\S\ref{sec:rnd-finding} that is suggestive --- though not
+formally significant at this sample size (Fisher exact
+$p \approx 0.67$) --- of RND being the proximate cause of the
+collapses we documented, with no net effect on final eval
+performance. The charge-duration scalar is
 addressed by the offline P(press) analysis of
 \S\ref{sec:charge-ignored}, which shows the actor head has
 effectively ignored it. The full factorial
@@ -660,10 +700,18 @@ $\{0.1, 0.25, 0.5, 1.0, 2.0\}$ would test whether any OCA/DPR
 effect at larger budgets is weight-driven, and is a natural
 extension once the factorial ablation is in place.
 
-\paragraph{Wall-clock and sample size.}
+\paragraph{Wall-clock, budget, and sample size.}
 Our largest limitation is wall clock: at \SI{500}{\milli\second}
 per step, $80\,000$ timesteps takes $\sim$14h per seed, so we ran
-only 3 seeds per condition. The per-step budget itself is a system
+only 3 seeds per condition. We note that most of the 9 RND-on
+seeds did not reach the full $80\,000$-step ($312$-update)
+budget before training was stopped at the visible plateau (final
+updates $173$--$224$; see Table~\ref{tab:perseed}), whereas the
+RND-off ablation seed ran the full $312$ updates. The RND-off vs
+RND-on comparison in \S\ref{sec:rnd-finding} is therefore mildly
+budget-mismatched (in RND-off's favour for the collapse count),
+which further reinforces our reluctance to draw a formal causal
+conclusion from the contingency. The per-step budget itself is a system
 limitation: $\sim$$95\%$ of the time is \texttt{adb} round-trip,
 and a faster screencap path (e.g.\ \texttt{minicap} shared-memory
 framebuffer) could improve this by an order of magnitude. The
@@ -707,9 +755,13 @@ policies. To \textbf{(Q3)}---does RND prevent and rescue entropy
 collapse?---we report the opposite of our original hypothesis. We
 observe 4 hard collapses across 3 seeds in the RND-on runs; a
 1-seed RND-off ablation produces zero collapses across the full 312
-PPO updates while yielding the same final eval return. RND is
-the proximate cause of, not a remedy for, the collapse phenomenon
-in this regime, but has no net effect on final performance. The cleanest methodological takeaways are (a) that
+PPO updates while yielding the same final eval return. This is
+consistent with RND being the proximate cause of, rather than a
+remedy for, the collapse phenomenon in this regime, though the
+$3$-of-$9$ vs $0$-of-$1$ comparison does not reach statistical
+significance (Fisher exact $p \approx 0.67$) and we do not claim
+formal causal attribution. The cleanest methodological takeaways
+are (a) that
 concatenating a state-relevant scalar to the encoder output is
 not by itself sufficient for PPO to use it---stronger supervisory
 signals or longer budgets appear necessary---and (b) that the
@@ -812,6 +864,9 @@ Table~\ref{tab:hparams} lists the full hyperparameters used in all
     OCA prediction horizon $K$                    & $4$ steps \\
     OCA target dimensionality                     & $10$ \\
     DPR decoder output                            & $84 \times 84$ grayscale \\
+    OCA per-update wall-clock overhead            & $\approx 5$--$10$\,ms \\
+    DPR per-update wall-clock overhead            & $\approx 20$--$40$\,ms \\
+    Per-seed total wall-clock (baseline / OCA / DPR) & $\approx 14.0$ / $14.4$ / $14.5$\,h \\
     \midrule
     \multicolumn{2}{l}{\emph{Observation / action}} \\
     Frame stack                                   & $4$ \\
