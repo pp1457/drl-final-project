@@ -786,13 +786,23 @@ without manual intervention.
 \label{sec:workload}
 
 \begin{itemize}
-  \item \textbf{[B12902046 Yun-Yang Liao]}: \emph{Experiments, infrastructure, and writing.}
-    Distributed training pipeline and emulator orchestration
-    (\texttt{orchestrate.py}, \texttt{launch\_on\_ws.sh},
-    \texttt{clean\_boot\_v8} snapshot), crash-proof checkpoint
-    mirroring, coordination of the 9-ws training matrix and the
-    RND-off ablation, manual scoreboard verification, statistical
-    analysis and paper drafting.
+  \item \textbf{[B12902046 Yun-Yang Liao]}: \emph{Systems
+    engineering, experimental design, evaluation, and writing.}
+    Designed and implemented the distributed training
+    infrastructure spanning nine workstations and eighteen Android
+    emulators, including the crash-proof checkpoint-mirroring
+    protocol described in \S\ref{sec:orchestration} that preserved
+    every final checkpoint through ten emulator-level failures and
+    a cluster-wide kill event. Coordinated the nine-seed factorial
+    training matrix end-to-end and executed the single-seed
+    RND-off ablation reported in \S\ref{sec:rnd-finding}.
+    Designed and ran the expanded deterministic-evaluation
+    protocol against the measured uniform-random baseline, as
+    well as the offline charge-duration diagnostic of
+    \S\ref{sec:charge-ignored}; performed all statistical analysis
+    ($95\%$ confidence intervals, Welch $t$-tests, Mann--Whitney
+    $U$, Fisher exact). Led paper writing through submission,
+    rebuttal, and camera-ready revision.
   \item \textbf{[B12902140 Cheng-Hsin Tsai]}: \emph{RL Algorithms and Architecture.}
     Responsible for implementing the core PPO backbone with GAE and
     the shared NatureCNN encoder. Integrated the 1-d press-count
